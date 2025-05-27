@@ -1,7 +1,7 @@
 FROM python:3.13-slim
 WORKDIR /app
 COPY . /app
-RUN pip install -r requirements.txt
+RUN pip install Flask
 RUN apt-get update && apt-get install -y sqlite3 curl
 RUN rm -rf /var/lib/apt/lists/*
 RUN curl -sLO https://github.com/tailwindlabs/tailwindcss/releases/latest/download/tailwindcss-linux-x64 \
