@@ -6,7 +6,7 @@ import os
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
 app = Flask(__name__)
-app.config['SECRET_KEY'] = '#{flask-secret}#'
+app.config['SECRET_KEY'] = '41TbN7v5peFLZPrdwSCc64J3mjmiUk5fkVWsmb2m'
 
 register_routes(app)
 
