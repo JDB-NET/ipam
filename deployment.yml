@@ -1,0 +1,87 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ipam
+  namespace: ipam
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ipam
+  template:
+    metadata:
+      labels:
+        app: ipam
+    spec:
+      containers:
+        - name: ipam
+          image: docker.jdbnet.co.uk/internal/ipam:latest
+          imagePullPolicy: Always
+          volumeMounts:
+            - mountPath: /app/db
+              name: ipam
+          ports:
+            - containerPort: 5000
+              name: "ipam"
+          livenessProbe:
+            failureThreshold: 3
+            httpGet:
+              path: /
+              port: 5000
+              scheme: HTTP
+            periodSeconds: 10
+            successThreshold: 1
+            timeoutSeconds: 1
+          readinessProbe:
+            failureThreshold: 3
+            httpGet:
+              path: /
+              port: 5000
+              scheme: HTTP
+            periodSeconds: 10
+            successThreshold: 1
+            timeoutSeconds: 1
+          startupProbe:
+            failureThreshold: 3
+            httpGet:
+              path: /
+              port: 5000
+              scheme: HTTP
+            periodSeconds: 10
+            successThreshold: 1
+            timeoutSeconds: 1
+      volumes:
+        - name: ipam
+          persistentVolumeClaim:
+            claimName: ipam
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ipam-ingress-service
+  namespace: ipam
+spec:
+  selector:
+    app: ipam
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 5000
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ipam-ingress
+  namespace: ipam
+spec:
+  rules:
+  - host: ipam.jdb143.uk
+    http:
+      paths:
+      - pathType: Prefix
+        path: "/"
+        backend:
+          service:
+            name: ipam-ingress-service
+            port:
+              number: 80

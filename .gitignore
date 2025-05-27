@@ -1,0 +1,4 @@
+db/
+__pycache__
+tailwindcss
+static/css/output.css

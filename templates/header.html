@@ -1,0 +1,33 @@
+<header class="bg-gray-800 shadow-md py-3 px-6 flex items-center justify-between relative">
+    <a href="/" class="flex items-center space-x-3">
+        <img src="/static/logo.png" alt="Logo" class="h-8 rounded">
+        <span class="text-2xl font-bold text-white">JDB-NET IPAM</span>
+    </a>
+    <div class="hidden lg:block absolute left-1/2 transform -translate-x-1/2 text-white text-lg font-medium whitespace-nowrap">
+        {% if current_user_name %}Hello, {{ current_user_name }}{% endif %}
+    </div>
+    <nav class="hidden md:flex items-center space-x-6" id="main-nav">
+        <a href="/" class="text-gray-200 hover:text-blue-400 font-medium">Home</a>
+        <a href="/devices" class="text-gray-200 hover:text-blue-400 font-medium">Devices</a>
+        <a href="/admin" class="text-gray-200 hover:text-blue-400 font-medium">Admin</a>
+        <a href="/audit" class="text-gray-200 hover:text-blue-400 font-medium">Audit Log</a>
+        {% if current_user_name %}
+        <a href="/logout" class="text-gray-200 hover:text-blue-400 font-medium">Logout</a>
+        {% endif %}
+    </nav>
+    <button class="md:hidden flex items-center text-gray-200 focus:outline-none" id="nav-toggle" aria-label="Open navigation menu">
+        <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path>
+        </svg>
+    </button>
+    <div class="md:hidden absolute top-16 right-6 bg-gray-800 rounded-lg shadow-lg z-50 w-48 hidden flex-col py-2" id="mobile-nav">
+        <a href="/" class="block px-6 py-2 text-gray-200 hover:text-blue-400 font-medium">Home</a>
+        <a href="/devices" class="block px-6 py-2 text-gray-200 hover:text-blue-400 font-medium">Devices</a>
+        <a href="/admin" class="block px-6 py-2 text-gray-200 hover:text-blue-400 font-medium">Admin</a>
+        <a href="/audit" class="block px-6 py-2 text-gray-200 hover:text-blue-400 font-medium">Audit Log</a>
+        {% if current_user_name %}
+        <a href="/logout" class="block px-6 py-2 text-gray-200 hover:text-blue-400 font-medium">Logout</a>
+        {% endif %}
+    </div>
+    <script src="/static/js/header.js"></script>
+</header>

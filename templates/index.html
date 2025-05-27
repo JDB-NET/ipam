@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JDB-NET IPAM</title>
+    <link rel="icon" type="image/png" href="/static/logo.png">
+    <link href="/static/css/output.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css" rel="stylesheet">
+</head>
+<body class="bg-gray-900 text-gray-100 min-h-screen flex flex-col">
+    {% include 'header.html' %}
+    <div class="flex-1 flex items-center justify-center mx-4">
+        <div class="container py-8 max-w-md pt-20">
+            <h1 class="text-3xl font-bold mb-6 text-center">JDB-NET IPAM</h1>
+            <ul class="space-y-4">
+                {% for site, subnets in sites_subnets.items() %}
+                <li class="site-group bg-gray-800 rounded-xl shadow-lg">
+                    <div class="flex flex-row items-center justify-between p-4 cursor-pointer site-header">
+                        <h2 class="text-xl font-bold mb-0 text-blue-300">{{ site }}</h2>
+                        <button type="button" class="expand-btn text-gray-400 hover:text-gray-200 ml-2 flex items-center" aria-label="Expand site">
+                            <i class="fas fa-chevron-down"></i>
+                        </button>
+                    </div>
+                    <ul class="subnet-list hidden space-y-4 px-2 pb-4">
+                        {% for subnet in subnets %}
+                        <li class="p-4 bg-gray-900 rounded-lg shadow-md flex items-center justify-between">
+                            <div>
+                                <a href="/subnet/{{ subnet.id }}" class="text-blue-400 hover:text-blue-300 text-lg font-medium">{{ subnet.name }}</a>
+                                <p class="text-sm text-gray-400">{{ subnet.cidr }}</p>
+                            </div>
+                            <button type="button" class="export-csv-btn ml-2 bg-gradient-to-r from-gray-500 to-gray-600 hover:from-gray-600 hover:to-gray-500 text-white flex items-center justify-center rounded-full w-9 h-9" title="Export as CSV" data-subnet-id="{{ subnet.id }}">
+                                <i class="fas fa-file-csv"></i>
+                            </button>
+                        </li>
+                        {% endfor %}
+                    </ul>
+                </li>
+                {% endfor %}
+            </ul>
+            <script src="/static/js/sitelist.js"></script>
+            <script src="/static/js/export_csv.js"></script>
+        </div>
+    </div>
+</body>
+</html>
