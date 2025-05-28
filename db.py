@@ -87,6 +87,17 @@ def init_db():
     )
     ''')
 
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS DHCPPool (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        subnet_id INTEGER NOT NULL,
+        start_ip TEXT NOT NULL,
+        end_ip TEXT NOT NULL,
+        excluded_ips TEXT,
+        FOREIGN KEY (subnet_id) REFERENCES Subnet(id) ON DELETE CASCADE
+    )
+    ''')
+
     cursor.execute('SELECT COUNT(*) FROM User')
     if cursor.fetchone()[0] == 0:
         cursor.execute('''INSERT INTO User (name, email, password) VALUES (?, ?, ?)''',

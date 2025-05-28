@@ -114,7 +114,28 @@ def register_routes(app):
             subnets = [dict(id=row[0], name=row[1], cidr=row[2], site=row[3]) for row in cursor.fetchall()]
             cursor.execute('''SELECT DeviceIPAddress.id as device_ip_id, IPAddress.ip FROM DeviceIPAddress JOIN IPAddress ON DeviceIPAddress.ip_id = IPAddress.id WHERE DeviceIPAddress.device_id = ?''', (device_id,))
             device_ips = [{'device_ip_id': row[0], 'ip': row[1]} for row in cursor.fetchall()]
-        return render_with_user('device.html', device={'id': device[0], 'name': device[1], 'description': device[2]}, subnets=subnets, device_ips=device_ips)
+            available_ips_by_subnet = {}
+            for subnet in subnets:
+                cursor.execute('SELECT id, ip FROM IPAddress WHERE subnet_id = ? AND id NOT IN (SELECT ip_id FROM DeviceIPAddress)', (subnet['id'],))
+                ips = [{'id': row[0], 'ip': row[1]} for row in cursor.fetchall()]
+                cursor.execute('SELECT start_ip, end_ip, excluded_ips FROM DHCPPool WHERE subnet_id = ?', (subnet['id'],))
+                dhcp_row = cursor.fetchone()
+                if dhcp_row:
+                    start_ip, end_ip, excluded_ips = dhcp_row
+                    excluded_list = [ip for ip in (excluded_ips or '').replace(' ', '').split(',') if ip]
+                    in_range = False
+                    filtered_ips = []
+                    for ip_obj in ips:
+                        ip = ip_obj['ip']
+                        if ip == start_ip:
+                            in_range = True
+                        if ip in excluded_list or not (in_range and ip not in excluded_list):
+                            filtered_ips.append(ip_obj)
+                        if ip == end_ip:
+                            in_range = False
+                    ips = filtered_ips
+                available_ips_by_subnet[subnet['id']] = ips
+        return render_with_user('device.html', device={'id': device[0], 'name': device[1], 'description': device[2]}, subnets=subnets, device_ips=device_ips, available_ips_by_subnet=available_ips_by_subnet)
 
     @app.route('/device/<int:device_id>/add_ip', methods=['POST'])
     @login_required
@@ -124,6 +145,96 @@ def register_routes(app):
         user_id = session.get('user_id')
         with get_db_connection() as conn:
             cursor = conn.cursor()
+            print(f"Submitted ip_id: {ip_id}")
+            cursor.execute('SELECT id, ip FROM IPAddress WHERE subnet_id = ?', (subnet_id,))
+            all_ip_rows = cursor.fetchall()
+            print(f"All IPs in subnet: {[row for row in all_ip_rows]}")
+            cursor.execute('SELECT ip_id FROM DeviceIPAddress')
+            assigned_ip_ids = [row[0] for row in cursor.fetchall()]
+            print(f"Assigned IP IDs: {assigned_ip_ids}")
+            cursor.execute('SELECT start_ip, end_ip, excluded_ips FROM DHCPPool WHERE subnet_id = ?', (subnet_id,))
+            dhcp_row = cursor.fetchone()
+            if dhcp_row:
+                start_ip, end_ip, excluded_ips = dhcp_row
+                excluded_list = [x for x in (excluded_ips or '').replace(' ', '').split(',') if x]
+                print(f"DHCP Excluded IPs: {excluded_list}")
+            cursor.execute('SELECT ip, hostname FROM IPAddress WHERE id = ?', (ip_id,))
+            ip_row = cursor.fetchone()
+            if not ip_row:
+                raise Exception("The selected IP address is no longer available. Please refresh and try again.")
+            ip = ip_row[0]
+            hostname = ip_row[1]
+            cursor.execute('SELECT start_ip, end_ip, excluded_ips FROM DHCPPool WHERE subnet_id = ?', (subnet_id,))
+            dhcp_row = cursor.fetchone()
+            if dhcp_row:
+                start_ip, end_ip, excluded_ips = dhcp_row
+                excluded_list = [x for x in (excluded_ips or '').replace(' ', '').split(',') if x]
+                print(f"DHCP Excluded IPs: {excluded_list}")
+                if ip not in excluded_list:
+                    cursor.execute('SELECT ip FROM IPAddress WHERE subnet_id = ?', (subnet_id,))
+                    all_ips = [row[0] for row in cursor.fetchall()]
+                    in_range = False
+                    reserved_for_dhcp = False
+                    for candidate_ip in all_ips:
+                        if candidate_ip == start_ip:
+                            in_range = True
+                        if in_range and candidate_ip == ip:
+                            reserved_for_dhcp = True
+                            break
+                        if candidate_ip == end_ip:
+                            in_range = False
+                    if reserved_for_dhcp:
+                        raise Exception("This IP is reserved for DHCP and cannot be assigned to a device.")
+            cursor.execute('SELECT id, ip FROM IPAddress WHERE subnet_id = ?', (subnet_id,))
+            all_ip_rows = cursor.fetchall()
+            cursor.execute('SELECT ip_id FROM DeviceIPAddress')
+            assigned_ip_ids = [row[0] for row in cursor.fetchall()]
+            cursor.execute('SELECT start_ip, end_ip, excluded_ips FROM DHCPPool WHERE subnet_id = ?', (subnet_id,))
+            dhcp_row = cursor.fetchone()
+            if dhcp_row:
+                start_ip, end_ip, excluded_ips = dhcp_row
+                excluded_list = [x for x in (excluded_ips or '').replace(' ', '').split(',') if x]
+                print(f"DHCP Excluded IPs: {excluded_list}")
+            cursor.execute('SELECT ip, hostname FROM IPAddress WHERE id = ?', (ip_id,))
+            ip_row = cursor.fetchone()
+            if not ip_row:
+                raise Exception("The selected IP address is no longer available. Please refresh and try again.")
+            ip = ip_row[0]
+            hostname = ip_row[1]
+            cursor.execute('SELECT start_ip, end_ip, excluded_ips FROM DHCPPool WHERE subnet_id = ?', (subnet_id,))
+            dhcp_row = cursor.fetchone()
+            if dhcp_row:
+                start_ip, end_ip, excluded_ips = dhcp_row
+                excluded_list = [x for x in (excluded_ips or '').replace(' ', '').split(',') if x]
+                print(f"DHCP Excluded IPs: {excluded_list}")
+                if ip not in excluded_list:
+                    cursor.execute('SELECT ip FROM IPAddress WHERE subnet_id = ?', (subnet_id,))
+                    all_ips = [row[0] for row in cursor.fetchall()]
+                    in_range = False
+                    reserved_for_dhcp = False
+                    for candidate_ip in all_ips:
+                        if candidate_ip == start_ip:
+                            in_range = True
+                        if in_range and candidate_ip == ip:
+                            reserved_for_dhcp = True
+                            break
+                        if candidate_ip == end_ip:
+                            in_range = False
+                    if reserved_for_dhcp:
+                        raise Exception("This IP is reserved for DHCP and cannot be assigned to a device.")
+            print(f"Submitted ip_id: {ip_id}")
+            cursor.execute('SELECT id, ip FROM IPAddress WHERE subnet_id = ?', (subnet_id,))
+            all_ip_rows = cursor.fetchall()
+            print(f"All IPs in subnet: {[row for row in all_ip_rows]}")
+            cursor.execute('SELECT ip_id FROM DeviceIPAddress')
+            assigned_ip_ids = [row[0] for row in cursor.fetchall()]
+            print(f"Assigned IP IDs: {assigned_ip_ids}")
+            cursor.execute('SELECT start_ip, end_ip, excluded_ips FROM DHCPPool WHERE subnet_id = ?', (subnet_id,))
+            dhcp_row = cursor.fetchone()
+            if dhcp_row:
+                start_ip, end_ip, excluded_ips = dhcp_row
+                excluded_list = [x for x in (excluded_ips or '').replace(' ', '').split(',') if x]
+                print(f"DHCP Excluded IPs: {excluded_list}")
             cursor.execute('INSERT INTO DeviceIPAddress (device_id, ip_id) VALUES (?, ?)', (device_id, ip_id))
             cursor.execute('SELECT name FROM Device WHERE id = ?', (device_id,))
             device_name = cursor.fetchone()[0]
@@ -331,7 +442,7 @@ def register_routes(app):
         subnet_id = request.args.get('subnet_id')
         with get_db_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute('''SELECT id, ip FROM IPAddress WHERE subnet_id = ? AND id NOT IN (SELECT ip_id FROM DeviceIPAddress)''', (subnet_id,))
+            cursor.execute('''SELECT id, ip FROM IPAddress WHERE subnet_id = ? AND id NOT IN (SELECT ip_id FROM DeviceIPAddress) AND (hostname IS NULL OR hostname != 'DHCP')''', (subnet_id,))
             available_ips = [{'id': row[0], 'ip': row[1]} for row in cursor.fetchall()]
         return {'available_ips': available_ips}
 
@@ -405,6 +516,52 @@ def register_routes(app):
             download_name=filename
         )
 
+    @app.route('/subnet/<int:subnet_id>/dhcp', methods=['GET', 'POST'])
+    @login_required
+    def dhcp_pool(subnet_id):
+        error = None
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('SELECT id, name, cidr FROM Subnet WHERE id = ?', (subnet_id,))
+            subnet = cursor.fetchone()
+            dhcp_pool = None
+            cursor.execute('''SELECT start_ip, end_ip, excluded_ips FROM DHCPPool WHERE subnet_id = ?''', (subnet_id,))
+            row = cursor.fetchone()
+            if row:
+                dhcp_pool = {'start_ip': row[0], 'end_ip': row[1], 'excluded_ips': row[2] if len(row) > 2 else ''}
+            if request.method == 'POST':
+                if 'remove' in request.form:
+                    cursor.execute('DELETE FROM DHCPPool WHERE subnet_id = ?', (subnet_id,))
+                    cursor.execute('UPDATE IPAddress SET hostname=NULL WHERE subnet_id=? AND hostname="DHCP"', (subnet_id,))
+                    conn.commit()
+                    dhcp_pool = None
+                else:
+                    start_ip = request.form['start_ip']
+                    end_ip = request.form['end_ip']
+                    excluded_ips = request.form.get('excluded_ips', '').replace(' ', '')
+                    excluded_list = [ip for ip in excluded_ips.split(',') if ip]
+                    cursor.execute('SELECT ip FROM IPAddress WHERE subnet_id = ?', (subnet_id,))
+                    all_ips = [row[0] for row in cursor.fetchall()]
+                    if start_ip not in all_ips or end_ip not in all_ips:
+                        error = 'Start and End IP must be within the subnet.'
+                    else:
+                        cursor.execute('UPDATE IPAddress SET hostname=NULL WHERE subnet_id=? AND hostname="DHCP"', (subnet_id,))
+                        if dhcp_pool:
+                            cursor.execute('''UPDATE DHCPPool SET start_ip = ?, end_ip = ?, excluded_ips = ? WHERE subnet_id = ?''', (start_ip, end_ip, excluded_ips, subnet_id))
+                        else:
+                            cursor.execute('''INSERT INTO DHCPPool (subnet_id, start_ip, end_ip, excluded_ips) VALUES (?, ?, ?, ?)''', (subnet_id, start_ip, end_ip, excluded_ips))
+                        in_range = False
+                        for ip in all_ips:
+                            if ip == start_ip:
+                                in_range = True
+                            if in_range and ip not in excluded_list:
+                                cursor.execute('UPDATE IPAddress SET hostname="DHCP" WHERE subnet_id=? AND ip=?', (subnet_id, ip))
+                            if ip == end_ip:
+                                break
+                        conn.commit()
+                        dhcp_pool = {'start_ip': start_ip, 'end_ip': end_ip, 'excluded_ips': excluded_ips}
+            return render_with_user('dhcp.html', subnet={'id': subnet[0], 'name': subnet[1]}, dhcp_pool=dhcp_pool, error=error)
+
     def get_current_user_name():
         user_id = session.get('user_id')
         if not user_id:
@@ -440,3 +597,4 @@ def register_routes(app):
     app.add_url_rule('/rename_device', 'rename_device', rename_device, methods=['POST'])
     app.add_url_rule('/update_device_description', 'update_device_description', update_device_description, methods=['POST'])
     app.add_url_rule('/subnet/<int:subnet_id>/export_csv', 'export_subnet_csv', export_subnet_csv)
+    app.add_url_rule('/subnet/<int:subnet_id>/dhcp', 'dhcp_pool', dhcp_pool, methods=['GET', 'POST'])
