@@ -17,9 +17,6 @@ spec:
         - name: ipam
           image: docker.jdbnet.co.uk/internal/ipam:latest
           imagePullPolicy: Always
-          volumeMounts:
-            - mountPath: /app/db
-              name: ipam
           ports:
             - containerPort: 5000
               name: "ipam"
@@ -50,10 +47,6 @@ spec:
             periodSeconds: 10
             successThreshold: 1
             timeoutSeconds: 1
-      volumes:
-        - name: ipam
-          persistentVolumeClaim:
-            claimName: ipam
 ---
 apiVersion: v1
 kind: Service

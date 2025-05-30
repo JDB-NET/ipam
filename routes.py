@@ -1,6 +1,5 @@
 from flask import render_template, request, redirect, url_for, send_from_directory, send_file, session
 from db import init_db, hash_password, get_db_connection, verify_password
-import sqlite3
 from ipaddress import ip_network
 from functools import wraps
 import os
@@ -18,13 +17,17 @@ def login_required(f):
     return decorated_function
 
 def add_audit_log(user_id, action, details=None, subnet_id=None, conn=None):
+    import datetime
     close_conn = False
     if conn is None:
-        conn = get_db_connection()
+        from flask import current_app
+        conn = get_db_connection(current_app)
         close_conn = True
     cursor = conn.cursor()
-    cursor.execute('''INSERT INTO AuditLog (user_id, action, details, subnet_id) VALUES (?, ?, ?, ?)''',
-                   (user_id, action, details, subnet_id))
+    # Always use UTC for timestamp
+    utc_now = datetime.datetime.now(datetime.timezone.utc).replace(microsecond=0)
+    cursor.execute('''INSERT INTO AuditLog (user_id, action, details, subnet_id, timestamp) VALUES (%s, %s, %s, %s, %s)''',
+                   (user_id, action, details, subnet_id, utc_now))
     if close_conn:
         conn.commit()
         conn.close()
@@ -36,9 +39,10 @@ def register_routes(app):
         if request.method == 'POST':
             email = request.form['email']
             password = request.form['password']
-            with get_db_connection() as conn:
+            from flask import current_app
+            with get_db_connection(current_app) as conn:
                 cursor = conn.cursor()
-                cursor.execute('SELECT id, password FROM User WHERE email = ?', (email,))
+                cursor.execute('SELECT id, password FROM User WHERE email = %s', (email,))
                 user = cursor.fetchone()
             if user and verify_password(password, user[1]):
                 session['logged_in'] = True
@@ -56,7 +60,8 @@ def register_routes(app):
     @app.route('/')
     @login_required
     def index():
-        with get_db_connection() as conn:
+        from flask import current_app
+        with get_db_connection(current_app) as conn:
             cursor = conn.cursor()
             cursor.execute('SELECT id, name, cidr, site FROM Subnet')
             subnets = cursor.fetchall()
@@ -71,7 +76,8 @@ def register_routes(app):
     @app.route('/devices')
     @login_required
     def devices():
-        with get_db_connection() as conn:
+        from flask import current_app
+        with get_db_connection(current_app) as conn:
             cursor = conn.cursor()
             cursor.execute('SELECT id, name FROM Device')
             devices = cursor.fetchall()
@@ -83,7 +89,7 @@ def register_routes(app):
                 device_ips.setdefault(row[0], []).append((row[1], row[2]))
             sites_devices = {}
             for device in devices:
-                cursor.execute('''SELECT Subnet.site FROM DeviceIPAddress JOIN IPAddress ON DeviceIPAddress.ip_id = IPAddress.id JOIN Subnet ON IPAddress.subnet_id = Subnet.id WHERE DeviceIPAddress.device_id = ? LIMIT 1''', (device[0],))
+                cursor.execute('''SELECT Subnet.site FROM DeviceIPAddress JOIN IPAddress ON DeviceIPAddress.ip_id = IPAddress.id JOIN Subnet ON IPAddress.subnet_id = Subnet.id WHERE DeviceIPAddress.device_id = %s LIMIT 1''', (device[0],))
                 site = cursor.fetchone()
                 site = site[0] if site else 'Unassigned'
                 if site not in sites_devices:
@@ -96,9 +102,10 @@ def register_routes(app):
     def add_device():
         if request.method == 'POST':
             name = request.form['device_name']
-            with get_db_connection() as conn:
+            from flask import current_app
+            with get_db_connection(current_app) as conn:
                 cursor = conn.cursor()
-                cursor.execute('INSERT INTO Device (name) VALUES (?)', (name,))
+                cursor.execute('INSERT INTO Device (name) VALUES (%s)', (name,))
                 conn.commit()
             return redirect(url_for('devices'))
         return render_with_user('add_device.html')
@@ -106,19 +113,20 @@ def register_routes(app):
     @app.route('/device/<int:device_id>')
     @login_required
     def device(device_id):
-        with get_db_connection() as conn:
+        from flask import current_app
+        with get_db_connection(current_app) as conn:
             cursor = conn.cursor()
-            cursor.execute('SELECT id, name, description FROM Device WHERE id = ?', (device_id,))
+            cursor.execute('SELECT id, name, description FROM Device WHERE id = %s', (device_id,))
             device = cursor.fetchone()
             cursor.execute('SELECT id, name, cidr, site FROM Subnet')
             subnets = [dict(id=row[0], name=row[1], cidr=row[2], site=row[3]) for row in cursor.fetchall()]
-            cursor.execute('''SELECT DeviceIPAddress.id as device_ip_id, IPAddress.ip FROM DeviceIPAddress JOIN IPAddress ON DeviceIPAddress.ip_id = IPAddress.id WHERE DeviceIPAddress.device_id = ?''', (device_id,))
+            cursor.execute('''SELECT DeviceIPAddress.id as device_ip_id, IPAddress.ip FROM DeviceIPAddress JOIN IPAddress ON DeviceIPAddress.ip_id = IPAddress.id WHERE DeviceIPAddress.device_id = %s''', (device_id,))
             device_ips = [{'device_ip_id': row[0], 'ip': row[1]} for row in cursor.fetchall()]
             available_ips_by_subnet = {}
             for subnet in subnets:
-                cursor.execute('SELECT id, ip FROM IPAddress WHERE subnet_id = ? AND id NOT IN (SELECT ip_id FROM DeviceIPAddress)', (subnet['id'],))
+                cursor.execute('SELECT id, ip FROM IPAddress WHERE subnet_id = %s AND id NOT IN (SELECT ip_id FROM DeviceIPAddress)', (subnet['id'],))
                 ips = [{'id': row[0], 'ip': row[1]} for row in cursor.fetchall()]
-                cursor.execute('SELECT start_ip, end_ip, excluded_ips FROM DHCPPool WHERE subnet_id = ?', (subnet['id'],))
+                cursor.execute('SELECT start_ip, end_ip, excluded_ips FROM DHCPPool WHERE subnet_id = %s', (subnet['id'],))
                 dhcp_row = cursor.fetchone()
                 if dhcp_row:
                     start_ip, end_ip, excluded_ips = dhcp_row
@@ -143,105 +151,51 @@ def register_routes(app):
         subnet_id = request.form['subnet_id']
         ip_id = request.form['ip_id']
         user_id = session.get('user_id')
-        with get_db_connection() as conn:
+        from flask import current_app
+        with get_db_connection(current_app) as conn:
             cursor = conn.cursor()
-            print(f"Submitted ip_id: {ip_id}")
-            cursor.execute('SELECT id, ip FROM IPAddress WHERE subnet_id = ?', (subnet_id,))
-            all_ip_rows = cursor.fetchall()
-            print(f"All IPs in subnet: {[row for row in all_ip_rows]}")
-            cursor.execute('SELECT ip_id FROM DeviceIPAddress')
-            assigned_ip_ids = [row[0] for row in cursor.fetchall()]
-            print(f"Assigned IP IDs: {assigned_ip_ids}")
-            cursor.execute('SELECT start_ip, end_ip, excluded_ips FROM DHCPPool WHERE subnet_id = ?', (subnet_id,))
-            dhcp_row = cursor.fetchone()
-            if dhcp_row:
-                start_ip, end_ip, excluded_ips = dhcp_row
-                excluded_list = [x for x in (excluded_ips or '').replace(' ', '').split(',') if x]
-                print(f"DHCP Excluded IPs: {excluded_list}")
-            cursor.execute('SELECT ip, hostname FROM IPAddress WHERE id = ?', (ip_id,))
-            ip_row = cursor.fetchone()
-            if not ip_row:
-                raise Exception("The selected IP address is no longer available. Please refresh and try again.")
-            ip = ip_row[0]
-            hostname = ip_row[1]
-            cursor.execute('SELECT start_ip, end_ip, excluded_ips FROM DHCPPool WHERE subnet_id = ?', (subnet_id,))
-            dhcp_row = cursor.fetchone()
-            if dhcp_row:
-                start_ip, end_ip, excluded_ips = dhcp_row
-                excluded_list = [x for x in (excluded_ips or '').replace(' ', '').split(',') if x]
-                print(f"DHCP Excluded IPs: {excluded_list}")
-                if ip not in excluded_list:
-                    cursor.execute('SELECT ip FROM IPAddress WHERE subnet_id = ?', (subnet_id,))
-                    all_ips = [row[0] for row in cursor.fetchall()]
-                    in_range = False
-                    reserved_for_dhcp = False
-                    for candidate_ip in all_ips:
-                        if candidate_ip == start_ip:
-                            in_range = True
-                        if in_range and candidate_ip == ip:
-                            reserved_for_dhcp = True
-                            break
-                        if candidate_ip == end_ip:
-                            in_range = False
-                    if reserved_for_dhcp:
-                        raise Exception("This IP is reserved for DHCP and cannot be assigned to a device.")
-            cursor.execute('SELECT id, ip FROM IPAddress WHERE subnet_id = ?', (subnet_id,))
+            cursor.execute('SELECT id, ip FROM IPAddress WHERE subnet_id = %s', (subnet_id,))
             all_ip_rows = cursor.fetchall()
             cursor.execute('SELECT ip_id FROM DeviceIPAddress')
             assigned_ip_ids = [row[0] for row in cursor.fetchall()]
-            cursor.execute('SELECT start_ip, end_ip, excluded_ips FROM DHCPPool WHERE subnet_id = ?', (subnet_id,))
+            cursor.execute('SELECT start_ip, end_ip, excluded_ips FROM DHCPPool WHERE subnet_id = %s', (subnet_id,))
             dhcp_row = cursor.fetchone()
             if dhcp_row:
                 start_ip, end_ip, excluded_ips = dhcp_row
                 excluded_list = [x for x in (excluded_ips or '').replace(' ', '').split(',') if x]
-                print(f"DHCP Excluded IPs: {excluded_list}")
-            cursor.execute('SELECT ip, hostname FROM IPAddress WHERE id = ?', (ip_id,))
-            ip_row = cursor.fetchone()
-            if not ip_row:
-                raise Exception("The selected IP address is no longer available. Please refresh and try again.")
-            ip = ip_row[0]
-            hostname = ip_row[1]
-            cursor.execute('SELECT start_ip, end_ip, excluded_ips FROM DHCPPool WHERE subnet_id = ?', (subnet_id,))
-            dhcp_row = cursor.fetchone()
-            if dhcp_row:
-                start_ip, end_ip, excluded_ips = dhcp_row
-                excluded_list = [x for x in (excluded_ips or '').replace(' ', '').split(',') if x]
-                print(f"DHCP Excluded IPs: {excluded_list}")
-                if ip not in excluded_list:
-                    cursor.execute('SELECT ip FROM IPAddress WHERE subnet_id = ?', (subnet_id,))
-                    all_ips = [row[0] for row in cursor.fetchall()]
-                    in_range = False
-                    reserved_for_dhcp = False
-                    for candidate_ip in all_ips:
-                        if candidate_ip == start_ip:
-                            in_range = True
-                        if in_range and candidate_ip == ip:
-                            reserved_for_dhcp = True
-                            break
-                        if candidate_ip == end_ip:
-                            in_range = False
-                    if reserved_for_dhcp:
-                        raise Exception("This IP is reserved for DHCP and cannot be assigned to a device.")
-            print(f"Submitted ip_id: {ip_id}")
-            cursor.execute('SELECT id, ip FROM IPAddress WHERE subnet_id = ?', (subnet_id,))
-            all_ip_rows = cursor.fetchall()
-            print(f"All IPs in subnet: {[row for row in all_ip_rows]}")
-            cursor.execute('SELECT ip_id FROM DeviceIPAddress')
-            assigned_ip_ids = [row[0] for row in cursor.fetchall()]
-            print(f"Assigned IP IDs: {assigned_ip_ids}")
-            cursor.execute('SELECT start_ip, end_ip, excluded_ips FROM DHCPPool WHERE subnet_id = ?', (subnet_id,))
-            dhcp_row = cursor.fetchone()
-            if dhcp_row:
-                start_ip, end_ip, excluded_ips = dhcp_row
-                excluded_list = [x for x in (excluded_ips or '').replace(' ', '').split(',') if x]
-                print(f"DHCP Excluded IPs: {excluded_list}")
-            cursor.execute('INSERT INTO DeviceIPAddress (device_id, ip_id) VALUES (?, ?)', (device_id, ip_id))
-            cursor.execute('SELECT name FROM Device WHERE id = ?', (device_id,))
+                cursor.execute('SELECT ip, hostname FROM IPAddress WHERE id = %s', (ip_id,))
+                ip_row = cursor.fetchone()
+                if not ip_row:
+                    raise Exception("The selected IP address is no longer available. Please refresh and try again.")
+                ip = ip_row[0]
+                hostname = ip_row[1]
+                cursor.execute('SELECT start_ip, end_ip, excluded_ips FROM DHCPPool WHERE subnet_id = %s', (subnet_id,))
+                dhcp_row = cursor.fetchone()
+                if dhcp_row:
+                    start_ip, end_ip, excluded_ips = dhcp_row
+                    excluded_list = [x for x in (excluded_ips or '').replace(' ', '').split(',') if x]
+                    if ip not in excluded_list:
+                        cursor.execute('SELECT ip FROM IPAddress WHERE subnet_id = %s', (subnet_id,))
+                        all_ips = [row[0] for row in cursor.fetchall()]
+                        in_range = False
+                        reserved_for_dhcp = False
+                        for candidate_ip in all_ips:
+                            if candidate_ip == start_ip:
+                                in_range = True
+                            if in_range and candidate_ip == ip:
+                                reserved_for_dhcp = True
+                                break
+                            if candidate_ip == end_ip:
+                                in_range = False
+                        if reserved_for_dhcp:
+                            raise Exception("This IP is reserved for DHCP and cannot be assigned to a device.")
+            cursor.execute('INSERT INTO DeviceIPAddress (device_id, ip_id) VALUES (%s, %s)', (device_id, ip_id))
+            cursor.execute('SELECT name FROM Device WHERE id = %s', (device_id,))
             device_name = cursor.fetchone()[0]
-            cursor.execute('UPDATE IPAddress SET hostname = ? WHERE id = ?', (device_name, ip_id))
-            cursor.execute('SELECT ip, subnet_id FROM IPAddress WHERE id = ?', (ip_id,))
+            cursor.execute('UPDATE IPAddress SET hostname = %s WHERE id = %s', (device_name, ip_id))
+            cursor.execute('SELECT ip, subnet_id FROM IPAddress WHERE id = %s', (ip_id,))
             ip, subnet_id_val = cursor.fetchone()
-            cursor.execute('SELECT name, cidr FROM Subnet WHERE id = ?', (subnet_id_val,))
+            cursor.execute('SELECT name, cidr FROM Subnet WHERE id = %s', (subnet_id_val,))
             subnet_name, subnet_cidr = cursor.fetchone()
             details = f"Assigned IP {ip} ({subnet_name} {subnet_cidr}) to device {device_name}"
             add_audit_log(user_id, 'device_add_ip', details, subnet_id_val, conn=conn)
@@ -253,22 +207,23 @@ def register_routes(app):
     def device_delete_ip(device_id):
         device_ip_id = request.form['device_ip_id']
         user_id = session.get('user_id')
-        with get_db_connection() as conn:
+        from flask import current_app
+        with get_db_connection(current_app) as conn:
             cursor = conn.cursor()
-            cursor.execute('SELECT ip_id FROM DeviceIPAddress WHERE id = ?', (device_ip_id,))
+            cursor.execute('SELECT ip_id FROM DeviceIPAddress WHERE id = %s', (device_ip_id,))
             ip_id = cursor.fetchone()[0]
-            cursor.execute('SELECT ip, subnet_id FROM IPAddress WHERE id = ?', (ip_id,))
+            cursor.execute('SELECT ip, subnet_id FROM IPAddress WHERE id = %s', (ip_id,))
             ip, subnet_id_val = cursor.fetchone()
-            cursor.execute('SELECT name, cidr FROM Subnet WHERE id = ?', (subnet_id_val,))
+            cursor.execute('SELECT name, cidr FROM Subnet WHERE id = %s', (subnet_id_val,))
             subnet_name, subnet_cidr = cursor.fetchone()
-            cursor.execute('SELECT device_id FROM DeviceIPAddress WHERE id = ?', (device_ip_id,))
+            cursor.execute('SELECT device_id FROM DeviceIPAddress WHERE id = %s', (device_ip_id,))
             device_id_val = cursor.fetchone()[0]
-            cursor.execute('SELECT name FROM Device WHERE id = ?', (device_id_val,))
+            cursor.execute('SELECT name FROM Device WHERE id = %s', (device_id_val,))
             device_name = cursor.fetchone()[0]
             details = f"Removed IP {ip} ({subnet_name} {subnet_cidr}) from device {device_name}"
             add_audit_log(user_id, 'device_delete_ip', details, subnet_id_val, conn=conn)
-            cursor.execute('DELETE FROM DeviceIPAddress WHERE id = ?', (device_ip_id,))
-            cursor.execute('UPDATE IPAddress SET hostname = NULL WHERE id = ?', (ip_id,))
+            cursor.execute('DELETE FROM DeviceIPAddress WHERE id = %s', (device_ip_id,))
+            cursor.execute('UPDATE IPAddress SET hostname = NULL WHERE id = %s', (ip_id,))
             conn.commit()
         return redirect(url_for('device', device_id=device_id))
 
@@ -277,24 +232,26 @@ def register_routes(app):
     def delete_device():
         device_id = request.form['device_id']
         user_id = session.get('user_id')
-        with get_db_connection() as conn:
+        from flask import current_app
+        with get_db_connection(current_app) as conn:
             cursor = conn.cursor()
-            cursor.execute('SELECT name FROM Device WHERE id = ?', (device_id,))
+            cursor.execute('SELECT name FROM Device WHERE id = %s', (device_id,))
             device_name = cursor.fetchone()[0]
             add_audit_log(user_id, 'delete_device', f"Deleted device {device_name}", conn=conn)
-            cursor.execute('DELETE FROM DeviceIPAddress WHERE device_id = ?', (device_id,))
-            cursor.execute('DELETE FROM Device WHERE id = ?', (device_id,))
+            cursor.execute('DELETE FROM DeviceIPAddress WHERE device_id = %s', (device_id,))
+            cursor.execute('DELETE FROM Device WHERE id = %s', (device_id,))
             conn.commit()
         return redirect(url_for('devices'))
 
     @app.route('/subnet/<int:subnet_id>')
     @login_required
     def subnet(subnet_id):
-        with get_db_connection() as conn:
+        from flask import current_app
+        with get_db_connection(current_app) as conn:
             cursor = conn.cursor()
-            cursor.execute('SELECT id, name, cidr FROM Subnet WHERE id = ?', (subnet_id,))
+            cursor.execute('SELECT id, name, cidr FROM Subnet WHERE id = %s', (subnet_id,))
             subnet = cursor.fetchone()
-            cursor.execute('SELECT * FROM IPAddress WHERE subnet_id = ?', (subnet_id,))
+            cursor.execute('SELECT * FROM IPAddress WHERE subnet_id = %s', (subnet_id,))
             ip_addresses = cursor.fetchall()
             cursor.execute('SELECT id, name, description FROM Device')
             devices = cursor.fetchall()
@@ -324,12 +281,13 @@ def register_routes(app):
                 return render_with_user('admin.html', subnets=[], error='Subnet must be /24 or smaller (e.g., /24, /25, ... /32)')
         except Exception as e:
             return render_with_user('admin.html', subnets=[], error='Invalid CIDR format.')
-        with get_db_connection() as conn:
+        from flask import current_app
+        with get_db_connection(current_app) as conn:
             cursor = conn.cursor()
-            cursor.execute('INSERT INTO Subnet (name, cidr, site) VALUES (?, ?, ?)', (name, cidr, site))
+            cursor.execute('INSERT INTO Subnet (name, cidr, site) VALUES (%s, %s, %s)', (name, cidr, site))
             subnet_id = cursor.lastrowid
             ip_rows = [(str(ip), subnet_id) for ip in network.hosts()]
-            cursor.executemany('INSERT INTO IPAddress (ip, subnet_id) VALUES (?, ?)', ip_rows)
+            cursor.executemany('INSERT INTO IPAddress (ip, subnet_id) VALUES (%s, %s)', ip_rows)
             add_audit_log(user_id, 'add_subnet', f"Added subnet {name} ({cidr})", subnet_id, conn=conn)
             conn.commit()
         return redirect(url_for('admin'))
@@ -339,39 +297,37 @@ def register_routes(app):
     def delete_subnet():
         subnet_id = request.form['subnet_id']
         user_id = session.get('user_id')
-        with get_db_connection() as conn:
+        from flask import current_app
+        with get_db_connection(current_app) as conn:
             cursor = conn.cursor()
-            cursor.execute('SELECT name, cidr FROM Subnet WHERE id = ?', (subnet_id,))
+            cursor.execute('SELECT name, cidr FROM Subnet WHERE id = %s', (subnet_id,))
             subnet = cursor.fetchone()
             add_audit_log(user_id, 'delete_subnet', f"Deleted subnet {subnet[0]} ({subnet[1]})", subnet_id, conn=conn)
-            cursor.execute('SELECT id FROM IPAddress WHERE subnet_id = ?', (subnet_id,))
+            cursor.execute('SELECT id FROM IPAddress WHERE subnet_id = %s', (subnet_id,))
             ip_ids = [row[0] for row in cursor.fetchall()]
             if ip_ids:
-                cursor.executemany('DELETE FROM DeviceIPAddress WHERE ip_id = ?', [(ip_id,) for ip_id in ip_ids])
-                cursor.executemany('UPDATE AuditLog SET subnet_id=NULL WHERE subnet_id = ?', [(subnet_id,) for _ in ip_ids])
-            cursor.execute('DELETE FROM IPAddress WHERE subnet_id = ?', (subnet_id,))
-            cursor.execute('DELETE FROM Subnet WHERE id = ?', (subnet_id,))
+                cursor.executemany('DELETE FROM DeviceIPAddress WHERE ip_id = %s', [(ip_id,) for ip_id in ip_ids])
+                cursor.executemany('UPDATE AuditLog SET subnet_id=NULL WHERE subnet_id = %s', [(subnet_id,) for _ in ip_ids])
+            cursor.execute('DELETE FROM IPAddress WHERE subnet_id = %s', (subnet_id,))
+            cursor.execute('DELETE FROM Subnet WHERE id = %s', (subnet_id,))
             conn.commit()
         return redirect(url_for('admin'))
 
     @app.route('/admin', methods=['GET', 'POST'])
     @login_required
     def admin():
-        with get_db_connection() as conn:
+        from flask import current_app
+        with get_db_connection(current_app) as conn:
             cursor = conn.cursor()
             cursor.execute('SELECT id, name, cidr FROM Subnet')
             subnets = [dict(id=row[0], name=row[1], cidr=row[2]) for row in cursor.fetchall()]
         return render_with_user('admin.html', subnets=subnets)
 
-    @app.route('/download_db')
-    @login_required
-    def download_db():
-        return send_file('db/subnets.db', as_attachment=True)
-
     @app.route('/users', methods=['GET', 'POST'])
     @login_required
     def users():
-        with get_db_connection() as conn:
+        from flask import current_app
+        with get_db_connection(current_app) as conn:
             cursor = conn.cursor()
             if request.method == 'POST':
                 action = request.form['action']
@@ -379,7 +335,7 @@ def register_routes(app):
                     name = request.form['name']
                     email = request.form['email']
                     password = hash_password(request.form['password'])
-                    cursor.execute('INSERT INTO User (name, email, password) VALUES (?, ?, ?)', (name, email, password))
+                    cursor.execute('INSERT INTO User (name, email, password) VALUES (%s, %s, %s)', (name, email, password))
                 elif action == 'edit':
                     user_id = request.form['user_id']
                     name = request.form['name']
@@ -387,14 +343,14 @@ def register_routes(app):
                     password = request.form['password']
                     if password:
                         password = hash_password(password)
-                        cursor.execute('UPDATE User SET name=?, email=?, password=? WHERE id=?', (name, email, password, user_id))
+                        cursor.execute('UPDATE User SET name=%s, email=%s, password=%s WHERE id=%s', (name, email, password, user_id))
                     else:
-                        cursor.execute('UPDATE User SET name=?, email=? WHERE id=?', (name, email, user_id))
+                        cursor.execute('UPDATE User SET name=%s, email=%s WHERE id=%s', (name, email, user_id))
                 elif action == 'delete':
                     user_id = request.form['user_id']
-                    cursor.execute('UPDATE User SET name=? WHERE id=?', ('Deleted User', user_id))
-                    cursor.execute('UPDATE AuditLog SET user_id=NULL WHERE user_id=?', (user_id,))
-                    cursor.execute('DELETE FROM User WHERE id=?', (user_id,))
+                    cursor.execute('UPDATE User SET name=%s WHERE id=%s', ('Deleted User', user_id))
+                    cursor.execute('UPDATE AuditLog SET user_id=NULL WHERE user_id=%s', (user_id,))
+                    cursor.execute('DELETE FROM User WHERE id=%s', (user_id,))
                 conn.commit()
             cursor.execute('SELECT id, name, email FROM User')
             users = cursor.fetchall()
@@ -403,7 +359,8 @@ def register_routes(app):
     @app.route('/audit')
     @login_required
     def audit():
-        with get_db_connection() as conn:
+        from flask import current_app
+        with get_db_connection(current_app) as conn:
             cursor = conn.cursor()
             user_id = request.args.get('user_id')
             subnet_id = request.args.get('subnet_id')
@@ -412,16 +369,16 @@ def register_routes(app):
             query = '''SELECT AuditLog.id, COALESCE(User.name, 'Deleted User'), AuditLog.action, AuditLog.details, Subnet.name, AuditLog.timestamp FROM AuditLog LEFT JOIN User ON AuditLog.user_id = User.id LEFT JOIN Subnet ON AuditLog.subnet_id = Subnet.id WHERE 1=1'''
             params = []
             if user_id:
-                query += ' AND AuditLog.user_id = ?'
+                query += ' AND AuditLog.user_id = %s'
                 params.append(user_id)
             if subnet_id:
-                query += ' AND AuditLog.subnet_id = ?'
+                query += ' AND AuditLog.subnet_id = %s'
                 params.append(subnet_id)
             if action:
-                query += ' AND AuditLog.action = ?'
+                query += ' AND AuditLog.action = %s'
                 params.append(action)
             if device_name:
-                query += ' AND AuditLog.details LIKE ?'
+                query += ' AND AuditLog.details LIKE %s'
                 params.append(f'%{device_name}%')
             query += ' ORDER BY AuditLog.timestamp DESC'
             cursor.execute(query, params)
@@ -440,9 +397,10 @@ def register_routes(app):
     @login_required
     def get_available_ips():
         subnet_id = request.args.get('subnet_id')
-        with get_db_connection() as conn:
+        from flask import current_app
+        with get_db_connection(current_app) as conn:
             cursor = conn.cursor()
-            cursor.execute('''SELECT id, ip FROM IPAddress WHERE subnet_id = ? AND id NOT IN (SELECT ip_id FROM DeviceIPAddress) AND (hostname IS NULL OR hostname != 'DHCP')''', (subnet_id,))
+            cursor.execute('''SELECT id, ip FROM IPAddress WHERE subnet_id = %s AND id NOT IN (SELECT ip_id FROM DeviceIPAddress) AND (hostname IS NULL OR hostname != 'DHCP')''', (subnet_id,))
             available_ips = [{'id': row[0], 'ip': row[1]} for row in cursor.fetchall()]
         return {'available_ips': available_ips}
 
@@ -452,12 +410,13 @@ def register_routes(app):
         device_id = request.form['device_id']
         new_name = request.form['new_name']
         user_id = session.get('user_id')
-        with get_db_connection() as conn:
+        from flask import current_app
+        with get_db_connection(current_app) as conn:
             cursor = conn.cursor()
-            cursor.execute('SELECT name FROM Device WHERE id = ?', (device_id,))
+            cursor.execute('SELECT name FROM Device WHERE id = %s', (device_id,))
             old_name = cursor.fetchone()[0]
-            cursor.execute('UPDATE Device SET name = ? WHERE id = ?', (new_name, device_id))
-            cursor.execute('UPDATE IPAddress SET hostname = ? WHERE hostname = ?', (new_name, old_name))
+            cursor.execute('UPDATE Device SET name = %s WHERE id = %s', (new_name, device_id))
+            cursor.execute('UPDATE IPAddress SET hostname = %s WHERE hostname = %s', (new_name, old_name))
             conn.commit()
             add_audit_log(user_id, 'rename_device', f"Renamed device '{old_name}' to '{new_name}'", conn=conn)
         return redirect(url_for('device', device_id=device_id))
@@ -467,22 +426,24 @@ def register_routes(app):
     def update_device_description():
         device_id = request.form['device_id']
         description = request.form['description']
-        with get_db_connection() as conn:
+        from flask import current_app
+        with get_db_connection(current_app) as conn:
             cursor = conn.cursor()
-            cursor.execute('UPDATE Device SET description = ? WHERE id = ?', (description, device_id))
+            cursor.execute('UPDATE Device SET description = %s WHERE id = %s', (description, device_id))
             conn.commit()
         return redirect(url_for('device', device_id=device_id))
 
     @app.route('/subnet/<int:subnet_id>/export_csv')
     @login_required
     def export_subnet_csv(subnet_id):
-        with get_db_connection() as conn:
+        from flask import current_app
+        with get_db_connection(current_app) as conn:
             cursor = conn.cursor()
-            cursor.execute('SELECT id, name, cidr FROM Subnet WHERE id = ?', (subnet_id,))
+            cursor.execute('SELECT id, name, cidr FROM Subnet WHERE id = %s', (subnet_id,))
             subnet = cursor.fetchone()
             if not subnet:
                 return 'Subnet not found', 404
-            cursor.execute('SELECT * FROM IPAddress WHERE subnet_id = ?', (subnet_id,))
+            cursor.execute('SELECT * FROM IPAddress WHERE subnet_id = %s', (subnet_id,))
             ip_addresses = cursor.fetchall()
             cursor.execute('SELECT id, name, description FROM Device')
             devices = cursor.fetchall()
@@ -520,55 +481,66 @@ def register_routes(app):
     @login_required
     def dhcp_pool(subnet_id):
         error = None
-        with get_db_connection() as conn:
+        from flask import current_app
+        with get_db_connection(current_app) as conn:
             cursor = conn.cursor()
-            cursor.execute('SELECT id, name, cidr FROM Subnet WHERE id = ?', (subnet_id,))
+            cursor.execute('SELECT id, name, cidr FROM Subnet WHERE id = %s', (subnet_id,))
             subnet = cursor.fetchone()
             dhcp_pool = None
-            cursor.execute('''SELECT start_ip, end_ip, excluded_ips FROM DHCPPool WHERE subnet_id = ?''', (subnet_id,))
+            cursor.execute('''SELECT start_ip, end_ip, excluded_ips FROM DHCPPool WHERE subnet_id = %s''', (subnet_id,))
             row = cursor.fetchone()
             if row:
                 dhcp_pool = {'start_ip': row[0], 'end_ip': row[1], 'excluded_ips': row[2] if len(row) > 2 else ''}
             if request.method == 'POST':
+                user_id = session.get('user_id')
                 if 'remove' in request.form:
-                    cursor.execute('DELETE FROM DHCPPool WHERE subnet_id = ?', (subnet_id,))
-                    cursor.execute('UPDATE IPAddress SET hostname=NULL WHERE subnet_id=? AND hostname="DHCP"', (subnet_id,))
+                    cursor.execute('DELETE FROM DHCPPool WHERE subnet_id = %s', (subnet_id,))
+                    cursor.execute('UPDATE IPAddress SET hostname=NULL WHERE subnet_id=%s AND hostname="DHCP"', (subnet_id,))
                     conn.commit()
                     dhcp_pool = None
+                    # Audit log for DHCP pool removal
+                    add_audit_log(user_id, 'dhcp_pool_remove', f"Removed DHCP pool for subnet {subnet[1]} ({subnet[2]})", subnet_id, conn=conn)
                 else:
                     start_ip = request.form['start_ip']
                     end_ip = request.form['end_ip']
                     excluded_ips = request.form.get('excluded_ips', '').replace(' ', '')
                     excluded_list = [ip for ip in excluded_ips.split(',') if ip]
-                    cursor.execute('SELECT ip FROM IPAddress WHERE subnet_id = ?', (subnet_id,))
+                    cursor.execute('SELECT ip FROM IPAddress WHERE subnet_id = %s', (subnet_id,))
                     all_ips = [row[0] for row in cursor.fetchall()]
                     if start_ip not in all_ips or end_ip not in all_ips:
                         error = 'Start and End IP must be within the subnet.'
                     else:
-                        cursor.execute('UPDATE IPAddress SET hostname=NULL WHERE subnet_id=? AND hostname="DHCP"', (subnet_id,))
+                        cursor.execute('UPDATE IPAddress SET hostname=NULL WHERE subnet_id=%s AND hostname="DHCP"', (subnet_id,))
                         if dhcp_pool:
-                            cursor.execute('''UPDATE DHCPPool SET start_ip = ?, end_ip = ?, excluded_ips = ? WHERE subnet_id = ?''', (start_ip, end_ip, excluded_ips, subnet_id))
+                            cursor.execute('''UPDATE DHCPPool SET start_ip = %s, end_ip = %s, excluded_ips = %s WHERE subnet_id = %s''', (start_ip, end_ip, excluded_ips, subnet_id))
+                            action = 'dhcp_pool_update'
+                            details = f"Updated DHCP pool for subnet {subnet[1]} ({subnet[2]}): {start_ip} - {end_ip}, excluded: {excluded_ips}"
                         else:
-                            cursor.execute('''INSERT INTO DHCPPool (subnet_id, start_ip, end_ip, excluded_ips) VALUES (?, ?, ?, ?)''', (subnet_id, start_ip, end_ip, excluded_ips))
+                            cursor.execute('''INSERT INTO DHCPPool (subnet_id, start_ip, end_ip, excluded_ips) VALUES (%s, %s, %s, %s)''', (subnet_id, start_ip, end_ip, excluded_ips))
+                            action = 'dhcp_pool_create'
+                            details = f"Created DHCP pool for subnet {subnet[1]} ({subnet[2]}): {start_ip} - {end_ip}, excluded: {excluded_ips}"
                         in_range = False
                         for ip in all_ips:
                             if ip == start_ip:
                                 in_range = True
                             if in_range and ip not in excluded_list:
-                                cursor.execute('UPDATE IPAddress SET hostname="DHCP" WHERE subnet_id=? AND ip=?', (subnet_id, ip))
+                                cursor.execute('UPDATE IPAddress SET hostname="DHCP" WHERE subnet_id=%s AND ip=%s', (subnet_id, ip))
                             if ip == end_ip:
                                 break
                         conn.commit()
                         dhcp_pool = {'start_ip': start_ip, 'end_ip': end_ip, 'excluded_ips': excluded_ips}
+                        # Audit log for DHCP pool create/update
+                        add_audit_log(user_id, action, details, subnet_id, conn=conn)
             return render_with_user('dhcp.html', subnet={'id': subnet[0], 'name': subnet[1]}, dhcp_pool=dhcp_pool, error=error)
 
     def get_current_user_name():
         user_id = session.get('user_id')
         if not user_id:
             return ''
-        with get_db_connection() as conn:
+        from flask import current_app
+        with get_db_connection(current_app) as conn:
             cursor = conn.cursor()
-            cursor.execute('SELECT name FROM User WHERE id = ?', (user_id,))
+            cursor.execute('SELECT name FROM User WHERE id = %s', (user_id,))
             row = cursor.fetchone()
             return row[0] if row else ''
 
@@ -590,7 +562,6 @@ def register_routes(app):
     app.add_url_rule('/add_subnet', 'add_subnet', add_subnet, methods=['POST'])
     app.add_url_rule('/delete_subnet', 'delete_subnet', delete_subnet, methods=['POST'])
     app.add_url_rule('/admin', 'admin', admin, methods=['GET', 'POST'])
-    app.add_url_rule('/download_db', 'download_db', download_db)
     app.add_url_rule('/users', 'users', users, methods=['GET', 'POST'])
     app.add_url_rule('/audit', 'audit', audit)
     app.add_url_rule('/get_available_ips', 'get_available_ips', get_available_ips)

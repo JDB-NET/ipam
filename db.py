@@ -1,7 +1,8 @@
 import os
-import sqlite3
 import hashlib
 import base64
+import mysql.connector
+from flask import current_app
 
 def hash_password(password, salt=None):
     if salt is None:
@@ -17,31 +18,44 @@ def verify_password(password, hashed):
         return False
     return hash_password(password, salt) == hashed
 
-def get_db_connection():
-    conn = sqlite3.connect('db/subnets.db')
-    conn.row_factory = sqlite3.Row
-    conn.execute('PRAGMA foreign_keys = ON;')
+def get_db_connection(app=None):
+    if app is None:
+        app = current_app
+    conn = mysql.connector.connect(
+        host=app.config['MYSQL_HOST'],
+        user=app.config['MYSQL_USER'],
+        password=app.config['MYSQL_PASSWORD'],
+        database=app.config['MYSQL_DATABASE'],
+        autocommit=True
+    )
     return conn
 
-def init_db():
-    os.makedirs('db', exist_ok=True)
-    conn = sqlite3.connect('db/subnets.db')
+def init_db(app=None):
+    if app is None:
+        app = current_app
+    conn = get_db_connection(app)
     cursor = conn.cursor()
-
     cursor.execute('''
     CREATE TABLE IF NOT EXISTS User (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        name TEXT NOT NULL,
-        email TEXT NOT NULL UNIQUE,
-        password TEXT NOT NULL
+        id INTEGER PRIMARY KEY AUTO_INCREMENT,
+        name VARCHAR(255) NOT NULL,
+        email VARCHAR(255) NOT NULL UNIQUE,
+        password VARCHAR(255) NOT NULL
     )
     ''')
-
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS Subnet (
+        id INTEGER PRIMARY KEY AUTO_INCREMENT,
+        name VARCHAR(255) NOT NULL,
+        cidr VARCHAR(255) NOT NULL,
+        site VARCHAR(255)
+    )
+    ''')
     cursor.execute('''
     CREATE TABLE IF NOT EXISTS AuditLog (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        id INTEGER PRIMARY KEY AUTO_INCREMENT,
         user_id INTEGER,
-        action TEXT NOT NULL,
+        action VARCHAR(255) NOT NULL,
         details TEXT,
         subnet_id INTEGER,
         timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -49,59 +63,44 @@ def init_db():
         FOREIGN KEY (subnet_id) REFERENCES Subnet(id)
     )
     ''')
-
-    cursor.execute('''
-    CREATE TABLE IF NOT EXISTS Subnet (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        name TEXT NOT NULL,
-        cidr TEXT NOT NULL,
-        site TEXT
-    )
-    ''')
-
     cursor.execute('''
     CREATE TABLE IF NOT EXISTS IPAddress (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        ip TEXT NOT NULL,
-        hostname TEXT,
+        id INTEGER PRIMARY KEY AUTO_INCREMENT,
+        ip VARCHAR(255) NOT NULL,
+        hostname VARCHAR(255),
         subnet_id INTEGER NOT NULL,
         FOREIGN KEY (subnet_id) REFERENCES Subnet (id)
     )
     ''')
-
     cursor.execute('''
     CREATE TABLE IF NOT EXISTS Device (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        name TEXT NOT NULL,
+        id INTEGER PRIMARY KEY AUTO_INCREMENT,
+        name VARCHAR(255) NOT NULL,
         description TEXT
     )
     ''')
-
     cursor.execute('''
     CREATE TABLE IF NOT EXISTS DeviceIPAddress (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        id INTEGER PRIMARY KEY AUTO_INCREMENT,
         device_id INTEGER NOT NULL,
         ip_id INTEGER NOT NULL,
         FOREIGN KEY (device_id) REFERENCES Device (id),
         FOREIGN KEY (ip_id) REFERENCES IPAddress (id)
     )
     ''')
-
     cursor.execute('''
     CREATE TABLE IF NOT EXISTS DHCPPool (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        id INTEGER PRIMARY KEY AUTO_INCREMENT,
         subnet_id INTEGER NOT NULL,
-        start_ip TEXT NOT NULL,
-        end_ip TEXT NOT NULL,
+        start_ip VARCHAR(255) NOT NULL,
+        end_ip VARCHAR(255) NOT NULL,
         excluded_ips TEXT,
         FOREIGN KEY (subnet_id) REFERENCES Subnet(id) ON DELETE CASCADE
     )
     ''')
-
     cursor.execute('SELECT COUNT(*) FROM User')
     if cursor.fetchone()[0] == 0:
-        cursor.execute('''INSERT INTO User (name, email, password) VALUES (?, ?, ?)''',
+        cursor.execute('''INSERT INTO User (name, email, password) VALUES (%s, %s, %s)''',
             ('Jamie Banks', 'jamie@jdbnet.co.uk', hash_password('Drippy-Cavity-Jawline')))
-
     conn.commit()
     conn.close()
