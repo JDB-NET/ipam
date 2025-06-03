@@ -15,6 +15,14 @@
                 <div class="flex items-center mb-8 relative justify-between gap-4">
                     <a href="javascript:window.history.back()" class="bg-gradient-to-r from-gray-500 to-gray-600 hover:from-gray-600 hover:to-gray-500 text-white flex items-center justify-center rounded-full w-11 h-11 shrink-0"><i class="fas fa-arrow-left"></i></a>
                     <h1 class="text-3xl font-bold text-center flex-1 min-w-0 truncate">{{ device.name }}</h1>
+                    <form action="/update_device_type" method="POST" class="hidden md:inline ml-2">
+                        <input type="hidden" name="device_id" value="{{ device.id }}">
+                        <select name="device_type_id" class="border p-2 rounded bg-gray-800 text-gray-100 border-gray-600" onchange="this.form.submit()">
+                            {% for dtype in device_types %}
+                                <option value="{{ dtype[0] }}" {% if device.device_type_id == dtype[0] %}selected{% endif %}>{{ dtype[1] }}</option>
+                            {% endfor %}
+                        </select>
+                    </form>
                     <div class="flex items-center shrink-0">
                         <form action="/rename_device" method="POST" class="inline">
                             <input type="hidden" name="device_id" value="{{ device.id }}">

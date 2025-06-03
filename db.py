@@ -76,7 +76,9 @@ def init_db(app=None):
     CREATE TABLE IF NOT EXISTS Device (
         id INTEGER PRIMARY KEY AUTO_INCREMENT,
         name VARCHAR(255) NOT NULL,
-        description TEXT
+        description TEXT,
+        device_type_id INTEGER DEFAULT 1,
+        FOREIGN KEY (device_type_id) REFERENCES DeviceType(id)
     )
     ''')
     cursor.execute('''
@@ -98,6 +100,35 @@ def init_db(app=None):
         FOREIGN KEY (subnet_id) REFERENCES Subnet(id) ON DELETE CASCADE
     )
     ''')
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS DeviceType (
+        id INTEGER PRIMARY KEY AUTO_INCREMENT,
+        name VARCHAR(255) NOT NULL UNIQUE,
+        icon_class VARCHAR(255) NOT NULL
+    )
+    ''')
+    cursor.execute('SELECT COUNT(*) FROM DeviceType')
+    if cursor.fetchone()[0] == 0:
+        cursor.executemany('INSERT INTO DeviceType (name, icon_class) VALUES (%s, %s)', [
+            ('Server', 'fa-server'),
+            ('Virtual Machine', 'fa-boxes-stacked'),
+            ('Switch', 'fa-network-wired'),
+            ('Firewall', 'fa-shield-halved'),
+            ('WiFi AP', 'fa-wifi'),
+            ('Printer', 'fa-print'),
+            ('Other', 'fa-question')
+        ])
+    cursor.execute("SHOW COLUMNS FROM Device LIKE 'device_type_id'")
+    if not cursor.fetchone():
+        cursor.execute('ALTER TABLE Device ADD COLUMN device_type_id INTEGER DEFAULT NULL')
+    cursor.execute("SELECT id FROM DeviceType WHERE name='Other'")
+    other_id = cursor.fetchone()[0]
+    cursor.execute('UPDATE Device SET device_type_id = %s WHERE device_type_id IS NULL', (other_id,))
+    try:
+        cursor.execute('ALTER TABLE Device ADD CONSTRAINT fk_device_type FOREIGN KEY (device_type_id) REFERENCES DeviceType(id)')
+    except mysql.connector.Error as e:
+        if e.errno != 1061 and e.errno != 1826 and 'Duplicate' not in str(e):
+            raise
     cursor.execute('SELECT COUNT(*) FROM User')
     if cursor.fetchone()[0] == 0:
         cursor.execute('''INSERT INTO User (name, email, password) VALUES (%s, %s, %s)''',

@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Device Type Statistics</title>
+    <link rel="icon" type="image/png" href="/static/logo.png">
+    <link href="/static/css/output.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css" rel="stylesheet">
+</head>
+<body class="bg-gray-900 text-gray-100 min-h-screen flex flex-col">
+    {% include 'header.html' %}
+    <div class="flex-1 flex items-center justify-center mx-4">
+        <div class="container py-8 max-w-2xl pt-20">
+            <h1 class="text-3xl font-bold mb-8 text-center">Device Type Statistics</h1>
+            <div class="bg-gray-800 rounded-lg shadow-md p-6">
+                <table class="w-full table-auto">
+                    <thead>
+                        <tr class="bg-gray-700">
+                            <th class="px-4 py-2 text-left">Type</th>
+                            <th class="px-4 py-2 text-center">Count</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for name, icon_class, count in stats %}
+                        <tr class="border-b border-gray-700">
+                            <td class="px-4 py-3 flex items-center gap-2"><i class="fas {{ icon_class }} text-blue-300"></i> {{ name }}</td>
+                            <td class="px-4 py-3 text-center font-bold">{{ count }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

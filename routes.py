@@ -79,7 +79,7 @@ def register_routes(app):
         from flask import current_app
         with get_db_connection(current_app) as conn:
             cursor = conn.cursor()
-            cursor.execute('SELECT id, name FROM Device')
+            cursor.execute('''SELECT Device.id, Device.name, DeviceType.icon_class FROM Device LEFT JOIN DeviceType ON Device.device_type_id = DeviceType.id''')
             devices = cursor.fetchall()
             cursor.execute('SELECT id, name, cidr, site FROM Subnet')
             subnets = cursor.fetchall()
@@ -94,21 +94,26 @@ def register_routes(app):
                 site = site[0] if site else 'Unassigned'
                 if site not in sites_devices:
                     sites_devices[site] = []
-                sites_devices[site].append({'id': device[0], 'name': device[1]})
+                sites_devices[site].append({'id': device[0], 'name': device[1], 'icon_class': device[2]})
         return render_with_user('devices.html', sites_devices=sites_devices, device_ips=device_ips)
 
     @app.route('/add_device', methods=['GET', 'POST'])
     @login_required
     def add_device():
+        from flask import current_app
+        with get_db_connection(current_app) as conn:
+            cursor = conn.cursor()
+            cursor.execute('SELECT id, name FROM DeviceType ORDER BY name')
+            device_types = cursor.fetchall()
         if request.method == 'POST':
             name = request.form['device_name']
-            from flask import current_app
+            device_type_id = int(request.form['device_type'])
             with get_db_connection(current_app) as conn:
                 cursor = conn.cursor()
-                cursor.execute('INSERT INTO Device (name) VALUES (%s)', (name,))
+                cursor.execute('INSERT INTO Device (name, device_type_id) VALUES (%s, %s)', (name, device_type_id))
                 conn.commit()
             return redirect(url_for('devices'))
-        return render_with_user('add_device.html')
+        return render_with_user('add_device.html', device_types=device_types)
 
     @app.route('/device/<int:device_id>')
     @login_required
@@ -116,8 +121,10 @@ def register_routes(app):
         from flask import current_app
         with get_db_connection(current_app) as conn:
             cursor = conn.cursor()
-            cursor.execute('SELECT id, name, description FROM Device WHERE id = %s', (device_id,))
+            cursor.execute('SELECT id, name, description, device_type_id FROM Device WHERE id = %s', (device_id,))
             device = cursor.fetchone()
+            cursor.execute('SELECT id, name FROM DeviceType ORDER BY name')
+            device_types = cursor.fetchall()
             cursor.execute('SELECT id, name, cidr, site FROM Subnet')
             subnets = [dict(id=row[0], name=row[1], cidr=row[2], site=row[3]) for row in cursor.fetchall()]
             cursor.execute('''SELECT DeviceIPAddress.id as device_ip_id, IPAddress.ip FROM DeviceIPAddress JOIN IPAddress ON DeviceIPAddress.ip_id = IPAddress.id WHERE DeviceIPAddress.device_id = %s''', (device_id,))
@@ -143,7 +150,19 @@ def register_routes(app):
                             in_range = False
                     ips = filtered_ips
                 available_ips_by_subnet[subnet['id']] = ips
-        return render_with_user('device.html', device={'id': device[0], 'name': device[1], 'description': device[2]}, subnets=subnets, device_ips=device_ips, available_ips_by_subnet=available_ips_by_subnet)
+        return render_with_user('device.html', device={'id': device[0], 'name': device[1], 'description': device[2], 'device_type_id': device[3]}, subnets=subnets, device_ips=device_ips, available_ips_by_subnet=available_ips_by_subnet, device_types=device_types)
+
+    @app.route('/update_device_type', methods=['POST'])
+    @login_required
+    def update_device_type():
+        device_id = request.form['device_id']
+        device_type_id = request.form['device_type_id']
+        from flask import current_app
+        with get_db_connection(current_app) as conn:
+            cursor = conn.cursor()
+            cursor.execute('UPDATE Device SET device_type_id = %s WHERE id = %s', (device_type_id, device_id))
+            conn.commit()
+        return redirect(url_for('device', device_id=device_id))
 
     @app.route('/device/<int:device_id>/add_ip', methods=['POST'])
     @login_required
@@ -533,6 +552,22 @@ def register_routes(app):
                         add_audit_log(user_id, action, details, subnet_id, conn=conn)
             return render_with_user('dhcp.html', subnet={'id': subnet[0], 'name': subnet[1]}, dhcp_pool=dhcp_pool, error=error)
 
+    @app.route('/device_type_stats')
+    @login_required
+    def device_type_stats():
+        from flask import current_app
+        with get_db_connection(current_app) as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT DeviceType.name, DeviceType.icon_class, COUNT(Device.id) as count
+                FROM DeviceType
+                LEFT JOIN Device ON Device.device_type_id = DeviceType.id
+                GROUP BY DeviceType.id, DeviceType.name, DeviceType.icon_class
+                ORDER BY DeviceType.name
+            ''')
+            stats = cursor.fetchall()
+        return render_with_user('device_type_stats.html', stats=stats)
+
     def get_current_user_name():
         user_id = session.get('user_id')
         if not user_id:
@@ -569,3 +604,4 @@ def register_routes(app):
     app.add_url_rule('/update_device_description', 'update_device_description', update_device_description, methods=['POST'])
     app.add_url_rule('/subnet/<int:subnet_id>/export_csv', 'export_subnet_csv', export_subnet_csv)
     app.add_url_rule('/subnet/<int:subnet_id>/dhcp', 'dhcp_pool', dhcp_pool, methods=['GET', 'POST'])
+    app.add_url_rule('/device_type_stats', 'device_type_stats', device_type_stats)

@@ -31,7 +31,7 @@
                         {% for device in devices %}
                         <li class="my-2">
                             <a href="/device/{{ device.id }}" class="flex items-center justify-between bg-gray-900 hover:bg-gray-700 text-gray-200 hover:text-white font-semibold rounded-lg px-4 py-2 shadow transition-colors duration-150">
-                                <span><i class="fas fa-server mr-2"></i>{{ device.name }}</span>
+                                <span><i class="fas {{ device.icon_class or 'fa-server' }} mr-2"></i>{{ device.name }}</span>
                                 {% set ips = device_ips.get(device.id, []) %}
                                 <span class="flex flex-row flex-wrap justify-end items-center ml-4 text-xs text-blue-300 font-normal align-middle">
                                     {% if ips|length > 0 %}
