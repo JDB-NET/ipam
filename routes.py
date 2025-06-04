@@ -257,6 +257,11 @@ def register_routes(app):
             cursor.execute('SELECT name FROM Device WHERE id = %s', (device_id,))
             device_name = cursor.fetchone()[0]
             add_audit_log(user_id, 'delete_device', f"Deleted device {device_name}", conn=conn)
+            # Set hostname to NULL for all IPs associated with this device
+            cursor.execute('SELECT ip_id FROM DeviceIPAddress WHERE device_id = %s', (device_id,))
+            ip_ids = [row[0] for row in cursor.fetchall()]
+            if ip_ids:
+                cursor.executemany('UPDATE IPAddress SET hostname = NULL WHERE id = %s', [(ip_id,) for ip_id in ip_ids])
             cursor.execute('DELETE FROM DeviceIPAddress WHERE device_id = %s', (device_id,))
             cursor.execute('DELETE FROM Device WHERE id = %s', (device_id,))
             conn.commit()
