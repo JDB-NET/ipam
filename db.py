@@ -119,9 +119,10 @@ def init_db(app=None):
     CREATE TABLE IF NOT EXISTS RackDevice (
         id INTEGER PRIMARY KEY AUTO_INCREMENT,
         rack_id INTEGER NOT NULL,
-        device_id INTEGER NOT NULL,
+        device_id INTEGER,
         position_u INTEGER NOT NULL,
         side ENUM('front', 'back') NOT NULL,
+        nonnet_device_name VARCHAR(255),
         FOREIGN KEY (rack_id) REFERENCES Rack(id) ON DELETE CASCADE,
         FOREIGN KEY (device_id) REFERENCES Device(id) ON DELETE CASCADE
     )
@@ -152,8 +153,5 @@ def init_db(app=None):
     if cursor.fetchone()[0] == 0:
         cursor.execute('''INSERT INTO User (name, email, password) VALUES (%s, %s, %s)''',
             ('Jamie Banks', 'jamie@jdbnet.co.uk', hash_password('Drippy-Cavity-Jawline')))
-    cursor.execute("SHOW COLUMNS FROM Device LIKE 'rack_only'")
-    if not cursor.fetchone():
-        cursor.execute('ALTER TABLE Device ADD COLUMN rack_only BOOLEAN DEFAULT 0')
     conn.commit()
     conn.close()
