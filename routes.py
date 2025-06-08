@@ -78,7 +78,7 @@ def register_routes(app):
         from flask import current_app
         with get_db_connection(current_app) as conn:
             cursor = conn.cursor()
-            cursor.execute('''SELECT Device.id, Device.name, DeviceType.icon_class FROM Device LEFT JOIN DeviceType ON Device.device_type_id = DeviceType.id''')
+            cursor.execute('''SELECT Device.id, Device.name, DeviceType.icon_class FROM Device LEFT JOIN DeviceType ON Device.device_type_id = DeviceType.id WHERE Device.rack_only IS NULL OR Device.rack_only=0''')
             devices = cursor.fetchall()
             cursor.execute('SELECT id, name, cidr, site FROM Subnet')
             subnets = cursor.fetchall()
@@ -610,6 +610,261 @@ def register_routes(app):
                 site_devices[site].append({'id': device_id, 'name': name, 'description': description})
         return render_with_user('devices_by_type.html', device_type=device_type, icon_class=icon_class, site_devices=site_devices)
 
+    @app.route('/racks')
+    @login_required
+    def racks():
+        from flask import current_app
+        with get_db_connection(current_app) as conn:
+            cursor = conn.cursor(dictionary=True)
+            cursor.execute('SELECT * FROM Rack')
+            racks = cursor.fetchall()
+        return render_with_user('racks.html', racks=racks)
+
+    @app.route('/rack/add', methods=['GET', 'POST'])
+    @login_required
+    def add_rack():
+        from flask import current_app
+        if request.method == 'POST':
+            name = request.form['name']
+            site = request.form['site']
+            height_u = int(request.form['height_u'])
+            user_id = session.get('user_id')
+            with get_db_connection(current_app) as conn:
+                cursor = conn.cursor()
+                cursor.execute('INSERT INTO Rack (name, site, height_u) VALUES (%s, %s, %s)', (name, site, height_u))
+                rack_id = cursor.lastrowid
+                add_audit_log(user_id, 'add_rack', f"Added rack '{name}' at site '{site}' ({height_u}U)", conn=conn)
+                conn.commit()
+            return redirect(url_for('racks'))
+        return render_with_user('add_rack.html')
+
+    @app.route('/rack/<int:rack_id>')
+    @login_required
+    def rack(rack_id):
+        from flask import current_app, request
+        side = request.args.get('side', 'front')
+        with get_db_connection(current_app) as conn:
+            cursor = conn.cursor(dictionary=True)
+            cursor.execute('SELECT * FROM Rack WHERE id = %s', (rack_id,))
+            rack = cursor.fetchone()
+            if not rack:
+                return 'Rack not found', 404
+            cursor.execute('SELECT * FROM RackDevice WHERE rack_id = %s', (rack_id,))
+            rack_devices = cursor.fetchall()
+            device_ids = [rd['device_id'] for rd in rack_devices]
+            device_names = {}
+            if device_ids:
+                format_strings = ','.join(['%s'] * len(device_ids))
+                cursor.execute(f'SELECT id, name FROM Device WHERE id IN ({format_strings})', tuple(device_ids))
+                for row in cursor.fetchall():
+                    device_names[row['id']] = row['name']
+            for rd in rack_devices:
+                rd['device_name'] = device_names.get(rd['device_id'], 'Unknown')
+            cursor.execute('SELECT id, name, device_type_id FROM Device WHERE device_type_id NOT IN (2, 6)')
+            all_devices = cursor.fetchall()
+            assigned = set((rd['device_id'], rd['position_u'], rd['side']) for rd in rack_devices)
+            site_devices = []
+            for d in all_devices:
+                site_devices.append(d)
+        return render_with_user('rack.html', rack=rack, rack_devices=rack_devices, site_devices=site_devices, current_side=side)
+
+    @app.route('/rack/<int:rack_id>/add_device', methods=['POST'])
+    @login_required
+    def rack_add_device(rack_id):
+        device_id = int(request.form['device_id'])
+        position_u = int(request.form['position_u'])
+        side = request.form['side']
+        user_id = session.get('user_id')
+        from flask import current_app
+        with get_db_connection(current_app) as conn:
+            cursor = conn.cursor(dictionary=True)
+            cursor.execute('SELECT height_u FROM Rack WHERE id = %s', (rack_id,))
+            rack = cursor.fetchone()
+            if not rack:
+                return 'Rack not found', 404
+            if position_u < 1 or position_u > rack['height_u']:
+                cursor.execute('SELECT * FROM RackDevice WHERE rack_id = %s', (rack_id,))
+                rack_devices = cursor.fetchall()
+                device_ids = [rd['device_id'] for rd in rack_devices]
+                device_names = {}
+                if device_ids:
+                    format_strings = ','.join(['%s'] * len(device_ids))
+                    cursor.execute(f'SELECT id, name FROM Device WHERE id IN ({format_strings})', tuple(device_ids))
+                    for row in cursor.fetchall():
+                        device_names[row['id']] = row['name']
+                for rd in rack_devices:
+                    rd['device_name'] = device_names.get(rd['device_id'], 'Unknown')
+                cursor.execute('SELECT id, name, device_type_id FROM Device')
+                all_devices = cursor.fetchall()
+                site_devices = [d for d in all_devices if d['device_type_id'] not in (2, 6)]
+                error = f"Invalid U position: {position_u}. Rack is {rack['height_u']}U tall."
+                return render_with_user('rack.html', rack=rack, rack_devices=rack_devices, site_devices=site_devices, current_side=side, error=error)
+            cursor.execute('SELECT COUNT(*) FROM RackDevice WHERE rack_id = %s AND position_u = %s AND side = %s', (rack_id, position_u, side))
+            if cursor.fetchone()['COUNT(*)'] > 0:
+                cursor.execute('SELECT * FROM RackDevice WHERE rack_id = %s', (rack_id,))
+                rack_devices = cursor.fetchall()
+                device_ids = [rd['device_id'] for rd in rack_devices]
+                device_names = {}
+                if device_ids:
+                    format_strings = ','.join(['%s'] * len(device_ids))
+                    cursor.execute(f'SELECT id, name FROM Device WHERE id IN ({format_strings})', tuple(device_ids))
+                    for row in cursor.fetchall():
+                        device_names[row['id']] = row['name']
+                for rd in rack_devices:
+                    rd['device_name'] = device_names.get(rd['device_id'], 'Unknown')
+                cursor.execute('SELECT id, name, device_type_id FROM Device')
+                all_devices = cursor.fetchall()
+                site_devices = [d for d in all_devices if d['device_type_id'] not in (2, 6)]
+                error = f"U{position_u} on the {side} is already occupied."
+                return render_with_user('rack.html', rack=rack, rack_devices=rack_devices, site_devices=site_devices, current_side=side, error=error)
+            cursor.execute('INSERT INTO RackDevice (rack_id, device_id, position_u, side) VALUES (%s, %s, %s, %s)', (rack_id, device_id, position_u, side))
+            cursor2 = conn.cursor()
+            cursor2.execute('SELECT name FROM Device WHERE id = %s', (device_id,))
+            device_name = cursor2.fetchone()
+            cursor2.execute('SELECT name FROM Rack WHERE id = %s', (rack_id,))
+            rack_name = cursor2.fetchone()
+            add_audit_log(user_id, 'rack_add_device', f"Assigned device '{device_name[0] if device_name else device_id}' to rack '{rack_name[0] if rack_name else rack_id}' U{position_u} ({side})", conn=conn)
+            conn.commit()
+        return redirect(url_for('rack', rack_id=rack_id))
+
+    @app.route('/rack/<int:rack_id>/add_nonnet_device', methods=['POST'])
+    @login_required
+    def rack_add_nonnet_device(rack_id):
+        device_name = request.form['device_name']
+        position_u = int(request.form['position_u'])
+        side = request.form['side']
+        user_id = session.get('user_id')
+        from flask import current_app
+        with get_db_connection(current_app) as conn:
+            cursor = conn.cursor(dictionary=True)
+            cursor.execute('SELECT height_u FROM Rack WHERE id = %s', (rack_id,))
+            rack = cursor.fetchone()
+            if not rack:
+                return 'Rack not found', 404
+            if position_u < 1 or position_u > rack['height_u']:
+                error = f"Invalid U position: {position_u}. Rack is {rack['height_u']}U tall."
+                cursor.execute('SELECT * FROM RackDevice WHERE rack_id = %s', (rack_id,))
+                rack_devices = cursor.fetchall()
+                device_ids = [rd['device_id'] for rd in rack_devices]
+                device_names = {}
+                if device_ids:
+                    format_strings = ','.join(['%s'] * len(device_ids))
+                    cursor.execute(f'SELECT id, name FROM Device WHERE id IN ({format_strings})', tuple(device_ids))
+                    for row in cursor.fetchall():
+                        device_names[row['id']] = row['name']
+                for rd in rack_devices:
+                    rd['device_name'] = device_names.get(rd['device_id'], 'Unknown')
+                cursor.execute('SELECT id, name, device_type_id FROM Device WHERE device_type_id NOT IN (2, 6) AND (rack_only IS NULL OR rack_only=0)')
+                site_devices = cursor.fetchall()
+                return render_with_user('rack.html', rack=rack, rack_devices=rack_devices, site_devices=site_devices, current_side=side, error=error)
+            cursor.execute('SELECT COUNT(*) FROM RackDevice WHERE rack_id = %s AND position_u = %s AND side = %s', (rack_id, position_u, side))
+            if cursor.fetchone()['COUNT(*)'] > 0:
+                error = f"U{position_u} on the {side} is already occupied."
+                cursor.execute('SELECT * FROM RackDevice WHERE rack_id = %s', (rack_id,))
+                rack_devices = cursor.fetchall()
+                device_ids = [rd['device_id'] for rd in rack_devices]
+                device_names = {}
+                if device_ids:
+                    format_strings = ','.join(['%s'] * len(device_ids))
+                    cursor.execute(f'SELECT id, name FROM Device WHERE id IN ({format_strings})', tuple(device_ids))
+                    for row in cursor.fetchall():
+                        device_names[row['id']] = row['name']
+                for rd in rack_devices:
+                    rd['device_name'] = device_names.get(rd['device_id'], 'Unknown')
+                cursor.execute('SELECT id, name, device_type_id FROM Device WHERE device_type_id NOT IN (2, 6) AND (rack_only IS NULL OR rack_only=0)')
+                site_devices = cursor.fetchall()
+                return render_with_user('rack.html', rack=rack, rack_devices=rack_devices, site_devices=site_devices, current_side=side, error=error)
+            cursor.execute('INSERT INTO Device (name, device_type_id, rack_only) VALUES (%s, %s, %s)', (device_name, 1, 1))
+            device_id = cursor.lastrowid
+            cursor.execute('INSERT INTO RackDevice (rack_id, device_id, position_u, side) VALUES (%s, %s, %s, %s)', (rack_id, device_id, position_u, side))
+            add_audit_log(user_id, 'rack_add_nonnet_device', f"Added non-networked device '{device_name}' to rack '{rack_id}' U{position_u} ({side})", conn=conn)
+            conn.commit()
+        return redirect(url_for('rack', rack_id=rack_id))
+
+    @app.route('/rack/<int:rack_id>/remove_device', methods=['POST'])
+    @login_required
+    def rack_remove_device(rack_id):
+        rack_device_id = int(request.form['rack_device_id'])
+        user_id = session.get('user_id')
+        from flask import current_app
+        with get_db_connection(current_app) as conn:
+            cursor = conn.cursor(dictionary=True)
+            cursor.execute('SELECT device_id, position_u, side FROM RackDevice WHERE id = %s', (rack_device_id,))
+            rd = cursor.fetchone()
+            cursor.execute('SELECT name FROM Device WHERE id = %s', (rd['device_id'],))
+            device_name_row = cursor.fetchone()
+            device_label = device_name_row['name'] if device_name_row and 'name' in device_name_row else rd['device_id']
+            cursor.execute('SELECT name FROM Rack WHERE id = %s', (rack_id,))
+            rack_name_row = cursor.fetchone()
+            rack_label = rack_name_row['name'] if rack_name_row and 'name' in rack_name_row else rack_id
+            add_audit_log(user_id, 'rack_remove_device', f"Removed device '{device_label}' from rack '{rack_label}' U{rd['position_u']} ({rd['side']})", conn=conn)
+            cursor.execute('DELETE FROM RackDevice WHERE id = %s', (rack_device_id,))
+            conn.commit()
+        return redirect(url_for('rack', rack_id=rack_id))
+
+    @app.route('/rack/<int:rack_id>/delete', methods=['POST'])
+    @login_required
+    def delete_rack(rack_id):
+        user_id = session.get('user_id')
+        from flask import current_app
+        with get_db_connection(current_app) as conn:
+            cursor = conn.cursor()
+            cursor.execute('SELECT name FROM Rack WHERE id = %s', (rack_id,))
+            rack_name = cursor.fetchone()
+            cursor.execute('DELETE FROM Rack WHERE id = %s', (rack_id,))
+            add_audit_log(user_id, 'delete_rack', f"Deleted rack '{rack_name[0] if rack_name else rack_id}'", conn=conn)
+            conn.commit()
+        return redirect(url_for('racks'))
+
+    @app.route('/rack/<int:rack_id>/export_csv')
+    @login_required
+    def export_rack_csv(rack_id):
+        from flask import current_app
+        with get_db_connection(current_app) as conn:
+            cursor = conn.cursor(dictionary=True)
+            cursor.execute('SELECT * FROM Rack WHERE id = %s', (rack_id,))
+            rack = cursor.fetchone()
+            if not rack:
+                return 'Rack not found', 404
+            cursor.execute('SELECT * FROM RackDevice WHERE rack_id = %s', (rack_id,))
+            rack_devices = cursor.fetchall()
+            device_ids = [rd['device_id'] for rd in rack_devices]
+            device_names = {}
+            if device_ids:
+                format_strings = ','.join(['%s'] * len(device_ids))
+                cursor.execute(f'SELECT id, name FROM Device WHERE id IN ({format_strings})', tuple(device_ids))
+                for row in cursor.fetchall():
+                    device_names[row['id']] = row['name']
+            for rd in rack_devices:
+                rd['device_name'] = device_names.get(rd['device_id'], 'Unknown')
+            output = StringIO()
+            writer = csv.writer(output)
+            writer.writerow([f"Rack: {rack['name']} ({rack['height_u']}U, {rack['site']})"])
+            writer.writerow([])
+            for side in ['front', 'back']:
+                writer.writerow([side.capitalize()])
+                writer.writerow(['U', 'Device'])
+                for u in range(rack['height_u'], 0, -1):
+                    found = False
+                    for rd in rack_devices:
+                        if rd['position_u'] == u and rd['side'] == side:
+                            writer.writerow([u, rd['device_name']])
+                            found = True
+                            break
+                    if not found:
+                        writer.writerow([u, ''])
+                writer.writerow([])
+            csv_bytes = output.getvalue().encode('utf-8')
+            output_bytes = BytesIO(csv_bytes)
+            output_bytes.seek(0)
+            filename = f"{rack['name']}_rack.csv".replace(' ', '_')
+            return send_file(
+                output_bytes,
+                mimetype='text/csv',
+                as_attachment=True,
+                download_name=filename
+            )
+
     def get_current_user_name():
         user_id = session.get('user_id')
         if not user_id:
@@ -647,3 +902,12 @@ def register_routes(app):
     app.add_url_rule('/subnet/<int:subnet_id>/export_csv', 'export_subnet_csv', export_subnet_csv)
     app.add_url_rule('/subnet/<int:subnet_id>/dhcp', 'dhcp_pool', dhcp_pool, methods=['GET', 'POST'])
     app.add_url_rule('/device_type_stats', 'device_type_stats', device_type_stats)
+    app.add_url_rule('/devices/type/<device_type>', 'devices_by_type', devices_by_type)
+    app.add_url_rule('/racks', 'racks', racks)
+    app.add_url_rule('/rack/add', 'add_rack', add_rack, methods=['GET', 'POST'])
+    app.add_url_rule('/rack/<int:rack_id>', 'rack', rack)
+    app.add_url_rule('/rack/<int:rack_id>/add_device', 'rack_add_device', rack_add_device, methods=['POST'])
+    app.add_url_rule('/rack/<int:rack_id>/add_nonnet_device', 'rack_add_nonnet_device', rack_add_nonnet_device, methods=['POST'])
+    app.add_url_rule('/rack/<int:rack_id>/remove_device', 'rack_remove_device', rack_remove_device, methods=['POST'])
+    app.add_url_rule('/rack/<int:rack_id>/delete', 'delete_rack', delete_rack, methods=['POST'])
+    app.add_url_rule('/rack/<int:rack_id>/export_csv', 'export_rack_csv', export_rack_csv)

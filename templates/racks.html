@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Racks</title>
+    <link rel="icon" type="image/png" href="/static/logo.png">
+    <link href="/static/css/output.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css" rel="stylesheet">
+</head>
+<body class="bg-gray-900 text-gray-100 min-h-screen flex flex-col">
+    {% include 'header.html' %}
+    <div class="flex-1 flex items-center justify-center mx-4">
+        <div class="container py-8 max-w-3xl pt-20">
+            <h1 class="text-3xl font-bold mb-8 text-center">Racks</h1>
+            <div class="flex justify-center mb-6">
+                <a href="/rack/add" class="bg-gradient-to-r from-gray-500 to-gray-700 hover:from-gray-600 hover:to-gray-800 text-white px-4 py-2 rounded-lg inline-block"><i class="fas fa-plus"></i> Add Rack</a>
+            </div>
+            <div class="space-y-6">
+                {% for rack in racks %}
+                <div class="bg-gray-800 rounded-lg shadow-md p-4 flex items-center justify-between">
+                    <div>
+                        <h2 class="text-xl font-bold text-blue-200 mb-1">{{ rack.name }}</h2>
+                        <div class="text-gray-400">Site: {{ rack.site }} | Height: {{ rack.height_u }}U</div>
+                    </div>
+                    <a href="/rack/{{ rack.id }}" class="bg-gradient-to-r from-gray-500 to-gray-700 hover:from-gray-600 hover:to-gray-800 text-white px-4 py-2 rounded-lg">View</a>
+                </div>
+                {% else %}
+                <div class="text-center text-gray-400">No racks defined yet.</div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+</body>
+</html>

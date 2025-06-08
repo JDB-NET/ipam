@@ -107,6 +107,25 @@ def init_db(app=None):
         FOREIGN KEY (subnet_id) REFERENCES Subnet(id) ON DELETE CASCADE
     )
     ''')
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS Rack (
+        id INTEGER PRIMARY KEY AUTO_INCREMENT,
+        name VARCHAR(255) NOT NULL,
+        site VARCHAR(255) NOT NULL,
+        height_u INTEGER NOT NULL
+    )
+    ''')
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS RackDevice (
+        id INTEGER PRIMARY KEY AUTO_INCREMENT,
+        rack_id INTEGER NOT NULL,
+        device_id INTEGER NOT NULL,
+        position_u INTEGER NOT NULL,
+        side ENUM('front', 'back') NOT NULL,
+        FOREIGN KEY (rack_id) REFERENCES Rack(id) ON DELETE CASCADE,
+        FOREIGN KEY (device_id) REFERENCES Device(id) ON DELETE CASCADE
+    )
+    ''')
     cursor.execute('SELECT COUNT(*) FROM DeviceType')
     if cursor.fetchone()[0] == 0:
         cursor.executemany('INSERT INTO DeviceType (name, icon_class) VALUES (%s, %s)', [
@@ -133,5 +152,8 @@ def init_db(app=None):
     if cursor.fetchone()[0] == 0:
         cursor.execute('''INSERT INTO User (name, email, password) VALUES (%s, %s, %s)''',
             ('Jamie Banks', 'jamie@jdbnet.co.uk', hash_password('Drippy-Cavity-Jawline')))
+    cursor.execute("SHOW COLUMNS FROM Device LIKE 'rack_only'")
+    if not cursor.fetchone():
+        cursor.execute('ALTER TABLE Device ADD COLUMN rack_only BOOLEAN DEFAULT 0')
     conn.commit()
     conn.close()

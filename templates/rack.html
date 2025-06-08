@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ rack.name }} - Rack View</title>
+    <link rel="icon" type="image/png" href="/static/logo.png">
+    <link href="/static/css/output.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css" rel="stylesheet">
+</head>
+<body class="bg-gray-900 text-gray-100 min-h-screen flex flex-col">
+    {% include 'header.html' %}
+    <div class="flex-1 flex items-center justify-center mx-4">
+        <div class="container py-8 max-w-2xl pt-20">
+            <div class="flex items-center mb-6 relative min-h-[3.5rem]">
+                <a href="/racks" class="hidden sm:flex absolute left-0 bg-gradient-to-r from-gray-500 to-gray-600 hover:from-gray-600 hover:to-gray-500 text-white items-center justify-center rounded-full w-11 h-11"><i class="fas fa-arrow-left"></i></a>
+                <h1 class="text-3xl font-bold text-center w-full flex items-center justify-center mb-0">{{ rack.name }} <span class="text-base text-gray-400 ml-2">({{ rack.height_u }}U, {{ rack.site }})</span></h1>
+                <form action="/rack/{{ rack.id }}/delete" method="POST" onsubmit="return confirm('Delete this rack?');" class="hidden sm:flex absolute right-0 mr-14">
+                    <button type="submit" class="bg-gradient-to-r from-gray-500 to-gray-600 hover:from-gray-600 hover:to-gray-500 text-white items-center justify-center rounded-full w-11 h-11 flex" title="Delete Rack">
+                        <i class="fas fa-times fa-lg"></i>
+                    </button>
+                </form>
+                <button type="button" id="export-csv" class="hidden sm:flex absolute right-0 bg-gradient-to-r from-gray-500 to-gray-600 hover:from-gray-600 hover:to-gray-500 text-white items-center justify-center rounded-full w-11 h-11 export-csv-btn" title="Export as CSV" data-rack-id="{{ rack.id }}">
+                    <i class="fas fa-file-csv fa-lg"></i>
+                </button>
+                <script>
+                document.addEventListener('DOMContentLoaded', function() {
+                    var btn = document.getElementById('export-csv');
+                    if (btn) {
+                        btn.addEventListener('click', function() {
+                            window.location = '/rack/' + btn.getAttribute('data-rack-id') + '/export_csv';
+                        });
+                    }
+                });
+                </script>
+            </div>
+            <div class="flex justify-center gap-4 mb-6">
+            </div>
+            <div class="flex flex-col md:flex-row gap-4 mb-6 items-stretch">
+                <div class="flex gap-4">
+                    <a href="?side=front" id="front-btn" class="rack-side-btn px-4 py-2 rounded-lg text-white font-semibold bg-gradient-to-r from-gray-500 to-gray-700 hover:from-gray-600 hover:to-gray-800 {% if current_side == 'front' %}ring-2 ring-blue-400{% endif %}">Front</a>
+                    <a href="?side=back" id="back-btn" class="rack-side-btn px-4 py-2 rounded-lg text-white font-semibold bg-gradient-to-r from-gray-500 to-gray-700 hover:from-gray-600 hover:to-gray-800 {% if current_side == 'back' %}ring-2 ring-blue-400{% endif %}">Back</a>
+                </div>
+                <button id="show-nonnet-form" type="button" class="w-full md:w-auto bg-gradient-to-r from-gray-500 to-gray-700 hover:from-gray-600 hover:to-gray-800 text-white px-4 py-2 rounded-lg mb-2 md:mb-0 md:ml-auto flex-shrink-0"><i class="fas fa-plus"></i> Add Non-Networked Device</button>
+            </div>
+            <form action="/rack/{{ rack.id }}/add_device" method="POST" class="mb-6 bg-gray-800 rounded-lg p-4">
+                <div class="flex flex-col md:flex-row gap-2 mb-2">
+                    <select name="device_id" class="border p-2 rounded bg-gray-900 text-gray-100 border-gray-600 w-full md:flex-1" required>
+                        <option value="" disabled selected>Select Device...</option>
+                        {% for device in site_devices %}
+                            {% if device.device_type_id != 2 and device.device_type_id != 6 %}
+                                <option value="{{ device.id }}">{{ device.name }}</option>
+                            {% endif %}
+                        {% endfor %}
+                    </select>
+                    <input type="number" name="position_u" min="1" max="{{ rack.height_u }}" class="border p-2 rounded bg-gray-900 text-gray-100 border-gray-600 w-full md:w-24" placeholder="U" required>
+                    <select name="side" class="border p-2 rounded bg-gray-900 text-gray-100 border-gray-600 w-full md:w-28" required>
+                        <option value="front">Front</option>
+                        <option value="back">Back</option>
+                    </select>
+                    <button type="submit" class="w-full md:w-auto bg-gradient-to-r from-gray-500 to-gray-700 hover:from-gray-600 hover:to-gray-800 text-white px-4 py-2 rounded-lg">Add Device</button>
+                </div>
+                <div class="text-xs text-gray-400">To add a multi-U device, repeat for each U position.</div>
+            </form>
+            <form id="nonnet-form" action="/rack/{{ rack.id }}/add_nonnet_device" method="POST" class="hidden flex flex-col gap-2 mt-2 mb-6 bg-gray-800 rounded-lg p-4">
+                <div class="flex flex-col md:flex-row gap-2">
+                    <input type="text" name="device_name" class="border p-2 rounded bg-gray-900 text-gray-100 border-gray-600 w-full md:flex-1" placeholder="Device Name" required>
+                    <input type="number" name="position_u" min="1" max="{{ rack.height_u }}" class="border p-2 rounded bg-gray-900 text-gray-100 border-gray-600 w-full md:w-24" placeholder="U" required>
+                    <select name="side" class="border p-2 rounded bg-gray-900 text-gray-100 border-gray-600 w-full md:w-28" required>
+                        <option value="front">Front</option>
+                        <option value="back">Back</option>
+                    </select>
+                    <button type="submit" class="w-full md:w-auto bg-gradient-to-r from-gray-500 to-gray-700 hover:from-gray-600 hover:to-gray-800 text-white px-4 py-2 rounded-lg">Add</button>
+                    <button id="hide-nonnet-form" type="button" class="w-full md:w-auto bg-gradient-to-r from-gray-500 to-gray-700 hover:from-gray-600 hover:to-gray-800 text-white px-4 py-2 rounded-lg md:ml-0.5 mt-2 md:mt-0 flex-shrink-0"><i class="fas fa-times"></i></button>
+                </div>
+                <div class="text-xs text-gray-400 mt-2">Add a non-networked device.</div>
+            </form>
+            <script>
+            document.getElementById('show-nonnet-form').onclick = function() {
+                document.getElementById('nonnet-form').classList.remove('hidden');
+                this.classList.add('hidden');
+            };
+            document.getElementById('hide-nonnet-form').onclick = function() {
+                document.getElementById('nonnet-form').classList.add('hidden');
+                document.getElementById('show-nonnet-form').classList.remove('hidden');
+            };
+            </script>
+            {% if error %}
+            <div class="mb-4 p-3 bg-red-700 text-white rounded-lg text-center font-semibold">{{ error }}</div>
+            {% endif %}
+            <div id="rack-visual" class="bg-gray-800 rounded-lg shadow-md p-4">
+                <h2 class="text-xl font-bold mb-2 text-blue-200" id="rack-side-label">{{ current_side|capitalize }}</h2>
+                <div id="rack-units">
+                    {% for u in range(rack.height_u, 0, -1) %}
+                    <div class="flex items-center h-10 border-b border-gray-700 hover:bg-gray-700/30 transition group">
+                        <span class="w-16 text-right text-gray-400 text-base font-mono pr-4">U{{ u }}</span>
+                        <span class="flex-1 ml-4 flex items-center min-h-8">
+                            {% set found = false %}
+                            {% for rd in rack_devices %}
+                                {% if rd.position_u == u and rd.side == current_side %}
+                                    <a href="/device/{{ rd.device_id }}" class="text-blue-400 hover:underline text-base">{{ rd.device_name }}</a>
+                                    <form action="/rack/{{ rack.id }}/remove_device" method="POST" style="display:inline" onsubmit="return confirm('Are you sure you want to remove this device from the rack?');">
+                                        <input type="hidden" name="rack_device_id" value="{{ rd.id }}">
+                                        <button type="submit" class="ml-3 text-red-400 hover:text-red-600"><i class="fas fa-times"></i></button>
+                                    </form>
+                                    {% set found = true %}
+                                {% endif %}
+                            {% endfor %}
+                        </span>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
