@@ -24,7 +24,6 @@ def add_audit_log(user_id, action, details=None, subnet_id=None, conn=None):
         conn = get_db_connection(current_app)
         close_conn = True
     cursor = conn.cursor()
-    # Always use UTC for timestamp
     utc_now = datetime.datetime.now(datetime.timezone.utc).replace(microsecond=0)
     cursor.execute('''INSERT INTO AuditLog (user_id, action, details, subnet_id, timestamp) VALUES (%s, %s, %s, %s, %s)''',
                    (user_id, action, details, subnet_id, utc_now))
@@ -255,16 +254,17 @@ def register_routes(app):
         with get_db_connection(current_app) as conn:
             cursor = conn.cursor()
             cursor.execute('SELECT name FROM Device WHERE id = %s', (device_id,))
-            device_name = cursor.fetchone()[0]
-            add_audit_log(user_id, 'delete_device', f"Deleted device {device_name}", conn=conn)
-            # Set hostname to NULL for all IPs associated with this device
-            cursor.execute('SELECT ip_id FROM DeviceIPAddress WHERE device_id = %s', (device_id,))
-            ip_ids = [row[0] for row in cursor.fetchall()]
-            if ip_ids:
-                cursor.executemany('UPDATE IPAddress SET hostname = NULL WHERE id = %s', [(ip_id,) for ip_id in ip_ids])
-            cursor.execute('DELETE FROM DeviceIPAddress WHERE device_id = %s', (device_id,))
-            cursor.execute('DELETE FROM Device WHERE id = %s', (device_id,))
-            conn.commit()
+            device_row = cursor.fetchone()
+            if device_row:
+                device_name = device_row[0]
+                add_audit_log(user_id, 'delete_device', f"Deleted device {device_name}", conn=conn)
+                cursor.execute('SELECT ip_id FROM DeviceIPAddress WHERE device_id = %s', (device_id,))
+                ip_ids = [row[0] for row in cursor.fetchall()]
+                if ip_ids:
+                    cursor.executemany('UPDATE IPAddress SET hostname = NULL WHERE id = %s', [(ip_id,) for ip_id in ip_ids])
+                cursor.execute('DELETE FROM DeviceIPAddress WHERE device_id = %s', (device_id,))
+                cursor.execute('DELETE FROM Device WHERE id = %s', (device_id,))
+                conn.commit()
         return redirect(url_for('devices'))
 
     @app.route('/subnet/<int:subnet_id>')
@@ -383,29 +383,34 @@ def register_routes(app):
     @app.route('/audit')
     @login_required
     def audit():
-        from flask import current_app
-        with get_db_connection(current_app) as conn:
+        PER_PAGE = 25
+        page = int(request.args.get('page', 1))
+        offset = (page - 1) * PER_PAGE
+        user_id = request.args.get('user_id')
+        subnet_id = request.args.get('subnet_id')
+        action = request.args.get('action')
+        device_name = request.args.get('device_name')
+        query = '''SELECT AuditLog.id, COALESCE(User.name, 'Deleted User'), AuditLog.action, AuditLog.details, Subnet.name, AuditLog.timestamp FROM AuditLog LEFT JOIN User ON AuditLog.user_id = User.id LEFT JOIN Subnet ON AuditLog.subnet_id = Subnet.id WHERE 1=1'''
+        params = []
+        if user_id:
+            query += ' AND AuditLog.user_id = %s'
+            params.append(user_id)
+        if subnet_id:
+            query += ' AND AuditLog.subnet_id = %s'
+            params.append(subnet_id)
+        if action:
+            query += ' AND AuditLog.action = %s'
+            params.append(action)
+        if device_name:
+            query += ' AND AuditLog.details LIKE %s'
+            params.append(f'%{device_name}%')
+        count_query = 'SELECT COUNT(*) FROM (' + query + ') AS count_subquery'
+        with get_db_connection() as conn:
             cursor = conn.cursor()
-            user_id = request.args.get('user_id')
-            subnet_id = request.args.get('subnet_id')
-            action = request.args.get('action')
-            device_name = request.args.get('device_name')
-            query = '''SELECT AuditLog.id, COALESCE(User.name, 'Deleted User'), AuditLog.action, AuditLog.details, Subnet.name, AuditLog.timestamp FROM AuditLog LEFT JOIN User ON AuditLog.user_id = User.id LEFT JOIN Subnet ON AuditLog.subnet_id = Subnet.id WHERE 1=1'''
-            params = []
-            if user_id:
-                query += ' AND AuditLog.user_id = %s'
-                params.append(user_id)
-            if subnet_id:
-                query += ' AND AuditLog.subnet_id = %s'
-                params.append(subnet_id)
-            if action:
-                query += ' AND AuditLog.action = %s'
-                params.append(action)
-            if device_name:
-                query += ' AND AuditLog.details LIKE %s'
-                params.append(f'%{device_name}%')
-            query += ' ORDER BY AuditLog.timestamp DESC'
-            cursor.execute(query, params)
+            cursor.execute(count_query, params)
+            total_logs = cursor.fetchone()[0]
+            query += ' ORDER BY AuditLog.timestamp DESC LIMIT %s OFFSET %s'
+            cursor.execute(query, params + [PER_PAGE, offset])
             logs = cursor.fetchall()
             cursor.execute('SELECT id, name FROM User')
             users = cursor.fetchall()
@@ -415,7 +420,9 @@ def register_routes(app):
             actions = [row[0] for row in cursor.fetchall()]
             cursor.execute('SELECT name FROM Device ORDER BY name')
             devices = cursor.fetchall()
-        return render_with_user('audit.html', logs=logs, users=users, subnets=subnets, actions=actions, devices=devices)
+        query_args = request.args.to_dict()
+        total_pages = (total_logs + PER_PAGE - 1) // PER_PAGE
+        return render_with_user('audit.html', logs=logs, users=users, subnets=subnets, actions=actions, devices=devices, page=page, total_pages=total_pages, query_args=query_args)
 
     @app.route('/get_available_ips')
     @login_required
@@ -522,7 +529,6 @@ def register_routes(app):
                     cursor.execute('UPDATE IPAddress SET hostname=NULL WHERE subnet_id=%s AND hostname="DHCP"', (subnet_id,))
                     conn.commit()
                     dhcp_pool = None
-                    # Audit log for DHCP pool removal
                     add_audit_log(user_id, 'dhcp_pool_remove', f"Removed DHCP pool for subnet {subnet[1]} ({subnet[2]})", subnet_id, conn=conn)
                 else:
                     start_ip = request.form['start_ip']
@@ -553,7 +559,6 @@ def register_routes(app):
                                 break
                         conn.commit()
                         dhcp_pool = {'start_ip': start_ip, 'end_ip': end_ip, 'excluded_ips': excluded_ips}
-                        # Audit log for DHCP pool create/update
                         add_audit_log(user_id, action, details, subnet_id, conn=conn)
             return render_with_user('dhcp.html', subnet={'id': subnet[0], 'name': subnet[1]}, dhcp_pool=dhcp_pool, error=error)
 
@@ -572,6 +577,38 @@ def register_routes(app):
             ''')
             stats = cursor.fetchall()
         return render_with_user('device_type_stats.html', stats=stats)
+
+    @app.route('/devices/type/<device_type>')
+    @login_required
+    def devices_by_type(device_type):
+        from flask import current_app
+        with get_db_connection(current_app) as conn:
+            cursor = conn.cursor()
+            cursor.execute('SELECT id, icon_class FROM DeviceType WHERE name = %s', (device_type,))
+            row = cursor.fetchone()
+            if not row:
+                return f"Device type '{device_type}' not found", 404
+            device_type_id, icon_class = row
+            cursor.execute('''
+                SELECT DISTINCT Device.id, Device.name, Device.description, Subnet.site
+                FROM Device
+                LEFT JOIN DeviceIPAddress ON Device.id = DeviceIPAddress.device_id
+                LEFT JOIN IPAddress ON DeviceIPAddress.ip_id = IPAddress.id
+                LEFT JOIN Subnet ON IPAddress.subnet_id = Subnet.id
+                WHERE Device.device_type_id = %s
+            ''', (device_type_id,))
+            devices = cursor.fetchall()
+            seen_ids = set()
+            site_devices = {}
+            for device_id, name, description, site in devices:
+                if device_id in seen_ids:
+                    continue
+                seen_ids.add(device_id)
+                site = site or 'Unassigned'
+                if site not in site_devices:
+                    site_devices[site] = []
+                site_devices[site].append({'id': device_id, 'name': name, 'description': description})
+        return render_with_user('devices_by_type.html', device_type=device_type, icon_class=icon_class, site_devices=site_devices)
 
     def get_current_user_name():
         user_id = session.get('user_id')

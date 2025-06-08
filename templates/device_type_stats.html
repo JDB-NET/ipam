@@ -24,7 +24,11 @@
                     <tbody>
                         {% for name, icon_class, count in stats %}
                         <tr class="border-b border-gray-700">
-                            <td class="px-4 py-3 flex items-center gap-2"><i class="fas {{ icon_class }} text-blue-300"></i> {{ name }}</td>
+                            <td class="px-4 py-3 flex items-center gap-2">
+                                <a href="{{ url_for('devices_by_type', device_type=name) }}" class="hover:underline flex items-center gap-2">
+                                    <i class="fas {{ icon_class }} text-blue-300"></i> {{ name }}
+                                </a>
+                            </td>
                             <td class="px-4 py-3 text-center font-bold">{{ count }}</td>
                         </tr>
                         {% endfor %}

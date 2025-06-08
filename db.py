@@ -73,6 +73,13 @@ def init_db(app=None):
     )
     ''')
     cursor.execute('''
+    CREATE TABLE IF NOT EXISTS DeviceType (
+        id INTEGER PRIMARY KEY AUTO_INCREMENT,
+        name VARCHAR(255) NOT NULL UNIQUE,
+        icon_class VARCHAR(255) NOT NULL
+    )
+    ''')
+    cursor.execute('''
     CREATE TABLE IF NOT EXISTS Device (
         id INTEGER PRIMARY KEY AUTO_INCREMENT,
         name VARCHAR(255) NOT NULL,
@@ -98,13 +105,6 @@ def init_db(app=None):
         end_ip VARCHAR(255) NOT NULL,
         excluded_ips TEXT,
         FOREIGN KEY (subnet_id) REFERENCES Subnet(id) ON DELETE CASCADE
-    )
-    ''')
-    cursor.execute('''
-    CREATE TABLE IF NOT EXISTS DeviceType (
-        id INTEGER PRIMARY KEY AUTO_INCREMENT,
-        name VARCHAR(255) NOT NULL UNIQUE,
-        icon_class VARCHAR(255) NOT NULL
     )
     ''')
     cursor.execute('SELECT COUNT(*) FROM DeviceType')

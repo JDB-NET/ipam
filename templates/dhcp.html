@@ -39,7 +39,7 @@
                 <div>Start: <span class="font-mono">{{ dhcp_pool.start_ip }}</span></div>
                 <div>End: <span class="font-mono">{{ dhcp_pool.end_ip }}</span></div>
                 {% if dhcp_pool.excluded_ips %}
-                <div>Excluded: <span class="font-mono">{{ dhcp_pool.excluded_ips }}</span></div>
+                <div>Excluded: <span class="font-mono break-words inline-block max-w-full whitespace-normal">{{ dhcp_pool.excluded_ips }}</span></div>
                 {% endif %}
             </div>
             {% endif %}

@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ device_type }} Devices</title>
+    <link rel="icon" type="image/png" href="/static/logo.png">
+    <link href="/static/css/output.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css" rel="stylesheet">
+</head>
+<body class="bg-gray-900 text-gray-100 min-h-screen flex flex-col">
+    {% include 'header.html' %}
+    <div class="flex-1 flex items-center justify-center mx-4">
+        <div class="container py-8 max-w-3xl pt-20">
+            <h1 class="text-3xl font-bold mb-8 text-center">
+                <i class="fas {{ icon_class }} text-blue-300"></i> {{ device_type }} Devices
+            </h1>
+            {% for site, devices in site_devices.items() %}
+            <div class="mb-8">
+                <h2 class="text-xl font-bold mb-4 text-blue-200">{{ site }}</h2>
+                <div class="bg-gray-800 rounded-lg shadow-md p-4">
+                    <table class="w-full table-auto mb-2">
+                        <thead>
+                            <tr class="bg-gray-700">
+                                <th class="px-4 py-2 text-left">Device Name</th>
+                                <th class="px-4 py-2 text-left">Description</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for device in devices %}
+                            <tr class="border-b border-gray-700">
+                                <td class="px-4 py-3">
+                                    <a href="/device/{{ device.id }}" class="hover:underline text-blue-300">{{ device.name }}</a>
+                                </td>
+                                <td class="px-4 py-3">{{ device.description or '' }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                        <tfoot>
+                            <tr class="bg-gray-900 font-bold">
+                                <td class="px-4 py-2 text-right" colspan="2">Total: {{ devices|length }}</td>
+                            </tr>
+                        </tfoot>
+                    </table>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+</body>
+</html>
