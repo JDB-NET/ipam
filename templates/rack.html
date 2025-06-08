@@ -38,13 +38,14 @@
             <div class="flex justify-center gap-4 mb-6">
             </div>
             <div class="flex flex-col md:flex-row gap-4 mb-6 items-stretch">
-                <div class="flex gap-4">
-                    <a href="?side=front" id="front-btn" class="rack-side-btn px-4 py-2 rounded-lg text-white font-semibold bg-gradient-to-r from-gray-500 to-gray-700 hover:from-gray-600 hover:to-gray-800 {% if current_side == 'front' %}ring-2 ring-blue-400{% endif %}">Front</a>
-                    <a href="?side=back" id="back-btn" class="rack-side-btn px-4 py-2 rounded-lg text-white font-semibold bg-gradient-to-r from-gray-500 to-gray-700 hover:from-gray-600 hover:to-gray-800 {% if current_side == 'back' %}ring-2 ring-blue-400{% endif %}">Back</a>
+                <div class="flex gap-4 w-full flex-wrap justify-center md:justify-start">
+                    <a href="?side=front" id="front-btn" class="rack-side-btn px-4 py-2 rounded-lg text-white font-semibold bg-gradient-to-r from-gray-500 to-gray-700 hover:from-gray-600 hover:to-gray-800 {% if current_side == 'front' %}ring-2 ring-gray-400{% endif %}">Front</a>
+                    <a href="?side=back" id="back-btn" class="rack-side-btn px-4 py-2 rounded-lg text-white font-semibold bg-gradient-to-r from-gray-500 to-gray-700 hover:from-gray-600 hover:to-gray-800 {% if current_side == 'back' %}ring-2 ring-gray-400{% endif %}">Back</a>
+                    <button id="show-add-device-form" type="button" class="flex-1 min-w-[12rem] max-w-[16rem] bg-gradient-to-r from-gray-500 to-gray-700 hover:from-gray-600 hover:to-gray-800 text-white px-4 py-2 rounded-lg flex-shrink-0 whitespace-nowrap mt-4 md:mt-0"> <i class="fas fa-plus"></i> Add Device</button>
+                    <button id="show-nonnet-form" type="button" class="flex-[1.5_1.5_0%] min-w-[16rem] max-w-[28rem] bg-gradient-to-r from-gray-500 to-gray-700 hover:from-gray-600 hover:to-gray-800 text-white px-4 py-2 rounded-lg flex-shrink-0 whitespace-nowrap mt-4 md:mt-0"> <i class="fas fa-plus"></i> Add Non-Networked Device</button>
                 </div>
-                <button id="show-nonnet-form" type="button" class="w-full md:w-auto bg-gradient-to-r from-gray-500 to-gray-700 hover:from-gray-600 hover:to-gray-800 text-white px-4 py-2 rounded-lg mb-2 md:mb-0 md:ml-auto flex-shrink-0"><i class="fas fa-plus"></i> Add Non-Networked Device</button>
             </div>
-            <form action="/rack/{{ rack.id }}/add_device" method="POST" class="mb-6 bg-gray-800 rounded-lg p-4">
+            <form id="add-device-form" action="/rack/{{ rack.id }}/add_device" method="POST" class="hidden mb-6 bg-gray-800 rounded-lg p-4">
                 <div class="flex flex-col md:flex-row gap-2 mb-2">
                     <select name="device_id" class="border p-2 rounded bg-gray-900 text-gray-100 border-gray-600 w-full md:flex-1" required>
                         <option value="" disabled selected>Select Device...</option>
@@ -60,6 +61,7 @@
                         <option value="back">Back</option>
                     </select>
                     <button type="submit" class="w-full md:w-auto bg-gradient-to-r from-gray-500 to-gray-700 hover:from-gray-600 hover:to-gray-800 text-white px-4 py-2 rounded-lg">Add Device</button>
+                    <button id="hide-add-device-form" type="button" class="w-full md:w-auto bg-gradient-to-r from-gray-500 to-gray-700 hover:from-gray-600 hover:to-gray-800 text-white px-4 py-2 rounded-lg md:ml-0.5 mt-2 md:mt-0 flex-shrink-0"><i class="fas fa-times"></i></button>
                 </div>
                 <div class="text-xs text-gray-400">To add a multi-U device, repeat for each U position.</div>
             </form>
@@ -77,14 +79,29 @@
                 <div class="text-xs text-gray-400 mt-2">Add a non-networked device.</div>
             </form>
             <script>
-            document.getElementById('show-nonnet-form').onclick = function() {
-                document.getElementById('nonnet-form').classList.remove('hidden');
-                this.classList.add('hidden');
-            };
-            document.getElementById('hide-nonnet-form').onclick = function() {
-                document.getElementById('nonnet-form').classList.add('hidden');
+            function showBothAddButtons() {
+                document.getElementById('show-add-device-form').classList.remove('hidden');
                 document.getElementById('show-nonnet-form').classList.remove('hidden');
-            };
+            }
+            document.addEventListener('DOMContentLoaded', function() {
+                showBothAddButtons();
+                document.getElementById('show-nonnet-form').onclick = function() {
+                    document.getElementById('nonnet-form').classList.remove('hidden');
+                    this.classList.add('hidden');
+                };
+                document.getElementById('hide-nonnet-form').onclick = function() {
+                    document.getElementById('nonnet-form').classList.add('hidden');
+                    showBothAddButtons();
+                };
+                document.getElementById('show-add-device-form').onclick = function() {
+                    document.getElementById('add-device-form').classList.remove('hidden');
+                    this.classList.add('hidden');
+                };
+                document.getElementById('hide-add-device-form').onclick = function() {
+                    document.getElementById('add-device-form').classList.add('hidden');
+                    showBothAddButtons();
+                };
+            });
             </script>
             {% if error %}
             <div class="mb-4 p-3 bg-red-700 text-white rounded-lg text-center font-semibold">{{ error }}</div>

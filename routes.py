@@ -889,6 +889,11 @@ def register_routes(app):
                 download_name=filename
             )
 
+    @app.route('/help')
+    @login_required
+    def help():
+        return render_with_user('help.html')
+
     def get_current_user_name():
         user_id = session.get('user_id')
         if not user_id:
@@ -935,3 +940,4 @@ def register_routes(app):
     app.add_url_rule('/rack/<int:rack_id>/remove_device', 'rack_remove_device', rack_remove_device, methods=['POST'])
     app.add_url_rule('/rack/<int:rack_id>/delete', 'delete_rack', delete_rack, methods=['POST'])
     app.add_url_rule('/rack/<int:rack_id>/export_csv', 'export_rack_csv', export_rack_csv)
+    app.add_url_rule('/help', 'help', help)
