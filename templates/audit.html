@@ -38,7 +38,10 @@
                     <option value="{{ device[0] }}" {% if request.args.get('device_name') == device[0] %}selected{% endif %}>{{ device[0] }}</option>
                     {% endfor %}
                 </select>
-                <button type="submit" class="bg-gradient-to-r from-gray-200 to-gray-200 dark:from-gray-500 dark:to-gray-700 px-4 py-2 rounded-lg">Filter</button>
+                <button type="submit" class="bg-gradient-to-r bg-gray-200 hover:bg-gray-400 dark:from-gray-500 dark:to-gray-700 hover:dark:from-gray-700 hover:dark:to-gray-500 px-4 py-2 rounded-lg flex items-center gap-2">
+                    <i class="fas fa-search"></i>
+                    <span>Filter</span>
+                </button>
             </form>
             <table class="w-full table-auto bg-gray-200 dark:bg-gray-800 rounded-lg overflow-hidden">
                 <thead>
@@ -67,7 +70,7 @@
                 {% if page > 1 %}
                 {% set prev_args = query_args.copy() %}
                 {% set _ = prev_args.update({'page': page-1}) %}
-                <a href="{{ url_for('audit', **prev_args) }}" class="px-3 py-1 rounded bg-gray-400 dark:bg-gray-700 flex items-center gap-2">
+                <a href="{{ url_for('audit', **prev_args) }}" class="px-3 py-1 rounded bg-gray-400 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 flex items-center gap-2">
                     <i class="fa fa-angle-left"></i>
                     <span class="hidden sm:inline">Prev</span>
                 </a>
@@ -75,12 +78,12 @@
                 {% for p in range(1, total_pages+1) %}
                 {% set page_args = query_args.copy() %}
                 {% set _ = page_args.update({'page': p}) %}
-                <a href="{{ url_for('audit', **page_args) }}" class="px-3 py-1 rounded {{ 'bg-gray-200 dark:bg-gray-500' if p == page else 'bg-gray-400 dark:bg-gray-700' }}">{{ p }}</a>
+                <a href="{{ url_for('audit', **page_args) }}" class="px-3 py-1 rounded {{ 'bg-gray-200 dark:bg-gray-500' if p == page else 'bg-gray-400 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600' }}">{{ p }}</a>
                 {% endfor %}
                 {% if page < total_pages %}
                 {% set next_args = query_args.copy() %}
                 {% set _ = next_args.update({'page': page+1}) %}
-                <a href="{{ url_for('audit', **next_args) }}" class="px-3 py-1 rounded bg-gray-400 dark:bg-gray-700 flex items-center gap-2">
+                <a href="{{ url_for('audit', **next_args) }}" class="px-3 py-1 rounded bg-gray-400 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 flex items-center gap-2">
                     <span class="hidden sm:inline">Next</span>
                     <i class="fa fa-angle-right"></i>
                 </a>
