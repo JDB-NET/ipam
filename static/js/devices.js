@@ -71,7 +71,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const scrollToTopButton = document.createElement('button');
     scrollToTopButton.innerHTML = '<i class="fas fa-arrow-up"></i>';
     scrollToTopButton.style.fontSize = '26px';
-    scrollToTopButton.className = 'fixed bottom-5 right-5 bg-gray-800 text-white p-3 rounded-full shadow-lg hidden';
+    scrollToTopButton.className = 'fixed bottom-5 right-5 bg-gray-200 dark:bg-gray-800 text-black dark:text-white p-3 rounded-full shadow-lg hidden';
     scrollToTopButton.style.width = '60px';
     scrollToTopButton.style.height = '60px';
     scrollToTopButton.style.borderRadius = '50%';
