@@ -13,7 +13,7 @@
     <div class="flex-1 flex items-center justify-center mx-4">
         <div class="container py-8 max-w-md pt-20">
             <div class="flex items-center mb-6 relative">
-                <a href="javascript:window.history.back()" class="absolute left-0 bg-gradient-to-r bg-gray-200 hover:bg-gray-400 dark:from-gray-500 dark:to-gray-700 hover:dark:from-gray-700 hover:dark:to-gray-500 flex items-center justify-center rounded-full w-11 h-11"><i class="fas fa-arrow-left"></i></a>
+                <a href="javascript:window.history.back()" class="absolute left-0 bg-gray-200 hover:bg-gray-400 dark:bg-gray-700 dark:hover:bg-gray-600 flex items-center justify-center rounded-full w-11 h-11"><i class="fas fa-arrow-left"></i></a>
                 <h1 class="text-3xl font-bold text-center w-full">Add Device</h1>
             </div>
             <form action="/add_device" method="POST" class="flex flex-col space-y-4">
@@ -24,7 +24,7 @@
                         <option value="{{ dtype[0] }}">{{ dtype[1] }}</option>
                     {% endfor %}
                 </select>
-                <button type="submit" class="bg-gradient-to-r bg-gray-200 hover:bg-gray-400 dark:from-gray-500 dark:to-gray-700 hover:dark:from-gray-700 hover:dark:to-gray-500 px-4 py-2 rounded-lg">Add Device</button>
+                <button type="submit" class="bg-gray-200 hover:bg-gray-400 dark:bg-gray-700 dark:hover:bg-gray-600 px-4 py-2 rounded-lg">Add Device</button>
             </form>
         </div>
     </div>
