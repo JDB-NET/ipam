@@ -1,12 +1,9 @@
 stages:
   - buildandpush
-  - sonarqube_and_deploy
+  - deploy
 
 variables:
   IMAGE_NAME: "$HARBOR_REGISTRY/internal/ipam"
-
-before_script:
-  - echo "$HARBOR_PASSWORD" | docker login $HARBOR_REGISTRY -u "$HARBOR_USERNAME" --password-stdin
 
 buildandpush:
   stage: buildandpush
@@ -14,32 +11,19 @@ buildandpush:
   tags:
     - docker
   script:
+    - echo "$HARBOR_PASSWORD" | docker login $HARBOR_REGISTRY -u "$HARBOR_USERNAME" --password-stdin
     - docker build -t $IMAGE_NAME:$IMAGE_TAG .
     - docker tag $IMAGE_NAME:$IMAGE_TAG $IMAGE_NAME:latest
     - docker push $IMAGE_NAME:$IMAGE_TAG
     - docker push $IMAGE_NAME:latest
-
-sonarqube:
-  stage: sonarqube_and_deploy
-  image:
-    name: sonarsource/sonar-scanner-cli:11
-    entrypoint: [""]
-  tags:
-    - docker
-  cache:
-    policy: pull-push
-    key: "sonar-cache-$CI_COMMIT_REF_SLUG"
-    paths:
-      - "${SONAR_USER_HOME}/cache"
-  before_script: []
-  script:
-    - sonar-scanner -Dsonar.host.url="${SONAR_HOST_URL}"
-  allow_failure: true
+    - docker tag $IMAGE_NAME:$IMAGE_TAG $HARBOR_REGISTRY/public/ipam:$IMAGE_TAG
+    - docker tag $IMAGE_NAME:$IMAGE_TAG $HARBOR_REGISTRY/public/ipam:latest
+    - docker push $HARBOR_REGISTRY/public/ipam:$IMAGE_TAG
+    - docker push $HARBOR_REGISTRY/public/ipam:latest
 
 deploy:
-  stage: sonarqube_and_deploy
+  stage: deploy
   tags:
     - k3s-lan-01
-  before_script: []
   script:
     - sudo kubectl replace -f deployment.yml --grace-period=60 --force

@@ -3,8 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>JDB-NET IPAM</title>
-    <link rel="icon" type="image/png" href="/static/logo.png">
+    <title>{{ NAME }} IPAM</title>
+    <link rel="icon" type="image/png" href="{{ LOGO_PNG }}">
     <link href="/static/css/output.css" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css" rel="stylesheet">
 </head>
@@ -12,7 +12,7 @@
     {% include 'header.html' %}
     <div class="flex-1 flex items-center justify-center mx-4">
         <div class="container py-8 max-w-md pt-20">
-            <h1 class="text-3xl font-bold mb-6 text-center">JDB-NET IPAM</h1>
+            <h1 class="text-3xl font-bold mb-6 text-center">{{ NAME }} IPAM</h1>
             <ul class="space-y-4">
                 {% for site, subnets in sites_subnets.items() %}
                 <li class="site-group bg-gray-200 dark:bg-gray-800 rounded-xl shadow-lg">

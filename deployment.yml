@@ -20,6 +20,17 @@ spec:
           ports:
             - containerPort: 5000
               name: "ipam"
+          env:
+            - name: SECRET_KEY
+              value: "41TbN7v5peFLZPrdwSCc64J3mjmiUk5fkVWsmb2m"
+            - name: MYSQL_HOST
+              value: "10.10.2.27"
+            - name: MYSQL_USER
+              value: "ipam"
+            - name: MYSQL_PASSWORD
+              value: "WXPmo05sGCfjGe"
+            - name: MYSQL_DATABASE
+              value: "ipam"
 ---
 apiVersion: v1
 kind: Service

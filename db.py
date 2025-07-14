@@ -152,6 +152,6 @@ def init_db(app=None):
     cursor.execute('SELECT COUNT(*) FROM User')
     if cursor.fetchone()[0] == 0:
         cursor.execute('''INSERT INTO User (name, email, password) VALUES (%s, %s, %s)''',
-            ('Jamie Banks', 'jamie@jdbnet.co.uk', hash_password('Drippy-Cavity-Jawline')))
+            ('admin', 'admin@example.com', hash_password('password')))
     conn.commit()
     conn.close()

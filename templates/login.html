@@ -3,8 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>JDB-NET IPAM</title>
-    <link rel="icon" type="image/png" href="/static/logo.png">
+    <title>{{ NAME }} IPAM</title>
+    <link rel="icon" type="image/png" href="{{ LOGO_PNG }}">
     <link href="/static/css/output.css" rel="stylesheet">
 </head>
 <body class="bg-gray-300 text-gray-900 dark:bg-gray-900 dark:text-gray-100 min-h-screen flex flex-col">
@@ -12,7 +12,7 @@
     <div class="flex-1 flex items-center justify-center mx-4">
         <div class="container py-8 max-w-md pt-20">
             <div class="bg-gray-200 dark:bg-gray-800 rounded-2xl shadow-lg p-8">
-                <h1 class="text-3xl font-bold mb-6 text-center">JDB-NET IPAM</h1>
+                <h1 class="text-3xl font-bold mb-6 text-center">{{ NAME }} IPAM</h1>
                 <form action="/login" method="POST" class="flex flex-col space-y-4">
                     <input type="email" name="email" placeholder="Email Address" class="p-3 rounded-lg bg-gray-200 dark:bg-gray-800 border border-gray-600" required>
                     <input type="password" name="password" placeholder="Password" class="p-3 rounded-lg bg-gray-200 dark:bg-gray-800 border border-gray-600" required>
