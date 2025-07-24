@@ -5,6 +5,7 @@ from functools import wraps
 import os
 import csv
 from io import StringIO, BytesIO
+import logging
 
 app = None
 
@@ -32,6 +33,8 @@ def add_audit_log(user_id, action, details=None, subnet_id=None, conn=None):
         conn.close()
 
 def register_routes(app):
+    logging.basicConfig(level=logging.INFO)
+
     @app.route('/login', methods=['GET', 'POST'])
     def login():
         error = None
@@ -46,13 +49,17 @@ def register_routes(app):
             if user and verify_password(password, user[1]):
                 session['logged_in'] = True
                 session['user_id'] = user[0]
+                logging.info(f"User {email} logged in successfully.")
                 return redirect(url_for('index'))
             else:
+                logging.info(f"Failed login attempt for email: {email}")
                 error = 'Invalid email or password.'
         return render_with_user('login.html', error=error)
 
     @app.route('/logout')
     def logout():
+        user_name = get_current_user_name()
+        logging.info(f"User {user_name} logged out.")
         session.clear()
         return redirect(url_for('login'))
 
@@ -107,10 +114,12 @@ def register_routes(app):
         if request.method == 'POST':
             name = request.form['device_name']
             device_type_id = int(request.form['device_type'])
+            user_name = get_current_user_name()
             with get_db_connection(current_app) as conn:
                 cursor = conn.cursor()
                 cursor.execute('INSERT INTO Device (name, device_type_id) VALUES (%s, %s)', (name, device_type_id))
                 conn.commit()
+            logging.info(f"User {user_name} added device '{name}' (type {device_type_id}).")
             return redirect(url_for('devices'))
         return render_with_user('add_device.html', device_types=device_types)
 
@@ -156,11 +165,13 @@ def register_routes(app):
     def update_device_type():
         device_id = request.form['device_id']
         device_type_id = request.form['device_type_id']
+        user_name = get_current_user_name()
         from flask import current_app
         with get_db_connection(current_app) as conn:
             cursor = conn.cursor()
             cursor.execute('UPDATE Device SET device_type_id = %s WHERE id = %s', (device_type_id, device_id))
             conn.commit()
+        logging.info(f"User {user_name} updated device {device_id} to type {device_type_id}.")
         return redirect(url_for('device', device_id=device_id))
 
     @app.route('/device/<int:device_id>/add_ip', methods=['POST'])
@@ -168,7 +179,7 @@ def register_routes(app):
     def device_add_ip(device_id):
         subnet_id = request.form['subnet_id']
         ip_id = request.form['ip_id']
-        user_id = session.get('user_id')
+        user_name = get_current_user_name()
         from flask import current_app
         with get_db_connection(current_app) as conn:
             cursor = conn.cursor()
@@ -216,15 +227,16 @@ def register_routes(app):
             cursor.execute('SELECT name, cidr FROM Subnet WHERE id = %s', (subnet_id_val,))
             subnet_name, subnet_cidr = cursor.fetchone()
             details = f"Assigned IP {ip} ({subnet_name} {subnet_cidr}) to device {device_name}"
-            add_audit_log(user_id, 'device_add_ip', details, subnet_id_val, conn=conn)
+            add_audit_log(session['user_id'], 'device_add_ip', details, subnet_id_val, conn=conn)
             conn.commit()
+        logging.info(f"User {user_name} assigned IP {ip} to device {device_id}.")
         return redirect(url_for('device', device_id=device_id))
 
     @app.route('/device/<int:device_id>/delete_ip', methods=['POST'])
     @login_required
     def device_delete_ip(device_id):
         device_ip_id = request.form['device_ip_id']
-        user_id = session.get('user_id')
+        user_name = get_current_user_name()
         from flask import current_app
         with get_db_connection(current_app) as conn:
             cursor = conn.cursor()
@@ -239,17 +251,18 @@ def register_routes(app):
             cursor.execute('SELECT name FROM Device WHERE id = %s', (device_id_val,))
             device_name = cursor.fetchone()[0]
             details = f"Removed IP {ip} ({subnet_name} {subnet_cidr}) from device {device_name}"
-            add_audit_log(user_id, 'device_delete_ip', details, subnet_id_val, conn=conn)
+            add_audit_log(session['user_id'], 'device_delete_ip', details, subnet_id_val, conn=conn)
             cursor.execute('DELETE FROM DeviceIPAddress WHERE id = %s', (device_ip_id,))
             cursor.execute('UPDATE IPAddress SET hostname = NULL WHERE id = %s', (ip_id,))
             conn.commit()
+        logging.info(f"User {user_name} removed IP {ip} from device {device_id}.")
         return redirect(url_for('device', device_id=device_id))
 
     @app.route('/delete_device', methods=['POST'])
     @login_required
     def delete_device():
         device_id = request.form['device_id']
-        user_id = session.get('user_id')
+        user_name = get_current_user_name()
         from flask import current_app
         with get_db_connection(current_app) as conn:
             cursor = conn.cursor()
@@ -257,7 +270,7 @@ def register_routes(app):
             device_row = cursor.fetchone()
             if device_row:
                 device_name = device_row[0]
-                add_audit_log(user_id, 'delete_device', f"Deleted device {device_name}", conn=conn)
+                add_audit_log(session['user_id'], 'delete_device', f"Deleted device {device_name}", conn=conn)
                 cursor.execute('SELECT ip_id FROM DeviceIPAddress WHERE device_id = %s', (device_id,))
                 ip_ids = [row[0] for row in cursor.fetchall()]
                 if ip_ids:
@@ -265,6 +278,7 @@ def register_routes(app):
                 cursor.execute('DELETE FROM DeviceIPAddress WHERE device_id = %s', (device_id,))
                 cursor.execute('DELETE FROM Device WHERE id = %s', (device_id,))
                 conn.commit()
+        logging.info(f"User {user_name} deleted device '{device_name}'.")
         return redirect(url_for('devices'))
 
     @app.route('/subnet/<int:subnet_id>')
@@ -298,7 +312,7 @@ def register_routes(app):
         name = request.form['name']
         cidr = request.form['cidr']
         site = request.form['site']
-        user_id = session.get('user_id')
+        user_name = get_current_user_name()
         try:
             network = ip_network(cidr, strict=False)
             if network.prefixlen < 24:
@@ -312,21 +326,22 @@ def register_routes(app):
             subnet_id = cursor.lastrowid
             ip_rows = [(str(ip), subnet_id) for ip in network.hosts()]
             cursor.executemany('INSERT INTO IPAddress (ip, subnet_id) VALUES (%s, %s)', ip_rows)
-            add_audit_log(user_id, 'add_subnet', f"Added subnet {name} ({cidr})", subnet_id, conn=conn)
+            add_audit_log(session['user_id'], 'add_subnet', f"Added subnet {name} ({cidr})", subnet_id, conn=conn)
             conn.commit()
+        logging.info(f"User {user_name} added subnet '{name}' ({cidr}) at site '{site}'.")
         return redirect(url_for('admin'))
 
     @app.route('/delete_subnet', methods=['POST'])
     @login_required
     def delete_subnet():
         subnet_id = request.form['subnet_id']
-        user_id = session.get('user_id')
+        user_name = get_current_user_name()
         from flask import current_app
         with get_db_connection(current_app) as conn:
             cursor = conn.cursor()
             cursor.execute('SELECT name, cidr FROM Subnet WHERE id = %s', (subnet_id,))
             subnet = cursor.fetchone()
-            add_audit_log(user_id, 'delete_subnet', f"Deleted subnet {subnet[0]} ({subnet[1]})", subnet_id, conn=conn)
+            add_audit_log(session['user_id'], 'delete_subnet', f"Deleted subnet {subnet[0]} ({subnet[1]})", subnet_id, conn=conn)
             cursor.execute('SELECT id FROM IPAddress WHERE subnet_id = %s', (subnet_id,))
             ip_ids = [row[0] for row in cursor.fetchall()]
             if ip_ids:
@@ -335,6 +350,7 @@ def register_routes(app):
             cursor.execute('DELETE FROM IPAddress WHERE subnet_id = %s', (subnet_id,))
             cursor.execute('DELETE FROM Subnet WHERE id = %s', (subnet_id,))
             conn.commit()
+        logging.info(f"User {user_name} deleted subnet {subnet_id}.")
         return redirect(url_for('admin'))
 
     @app.route('/admin', methods=['GET', 'POST'])
@@ -355,11 +371,13 @@ def register_routes(app):
             cursor = conn.cursor()
             if request.method == 'POST':
                 action = request.form['action']
+                user_name = get_current_user_name()
                 if action == 'add':
                     name = request.form['name']
                     email = request.form['email']
                     password = hash_password(request.form['password'])
                     cursor.execute('INSERT INTO User (name, email, password) VALUES (%s, %s, %s)', (name, email, password))
+                    logging.info(f"User {user_name} added user '{name}' ({email}).")
                 elif action == 'edit':
                     user_id = request.form['user_id']
                     name = request.form['name']
@@ -370,11 +388,13 @@ def register_routes(app):
                         cursor.execute('UPDATE User SET name=%s, email=%s, password=%s WHERE id=%s', (name, email, password, user_id))
                     else:
                         cursor.execute('UPDATE User SET name=%s, email=%s WHERE id=%s', (name, email, user_id))
+                    logging.info(f"User {user_name} edited user {user_id}.")
                 elif action == 'delete':
                     user_id = request.form['user_id']
                     cursor.execute('UPDATE User SET name=%s WHERE id=%s', ('Deleted User', user_id))
                     cursor.execute('UPDATE AuditLog SET user_id=NULL WHERE user_id=%s', (user_id,))
                     cursor.execute('DELETE FROM User WHERE id=%s', (user_id,))
+                    logging.info(f"User {user_name} deleted user {user_id}.")
                 conn.commit()
             cursor.execute('SELECT id, name, email FROM User')
             users = cursor.fetchall()
@@ -440,7 +460,7 @@ def register_routes(app):
     def rename_device():
         device_id = request.form['device_id']
         new_name = request.form['new_name']
-        user_id = session.get('user_id')
+        user_name = get_current_user_name()
         from flask import current_app
         with get_db_connection(current_app) as conn:
             cursor = conn.cursor()
@@ -449,7 +469,8 @@ def register_routes(app):
             cursor.execute('UPDATE Device SET name = %s WHERE id = %s', (new_name, device_id))
             cursor.execute('UPDATE IPAddress SET hostname = %s WHERE hostname = %s', (new_name, old_name))
             conn.commit()
-            add_audit_log(user_id, 'rename_device', f"Renamed device '{old_name}' to '{new_name}'", conn=conn)
+            add_audit_log(session['user_id'], 'rename_device', f"Renamed device '{old_name}' to '{new_name}'", conn=conn)
+        logging.info(f"User {user_name} renamed device {device_id} from '{old_name}' to '{new_name}'.")
         return redirect(url_for('device', device_id=device_id))
 
     @app.route('/update_device_description', methods=['POST'])
@@ -457,11 +478,13 @@ def register_routes(app):
     def update_device_description():
         device_id = request.form['device_id']
         description = request.form['description']
+        user_name = get_current_user_name()
         from flask import current_app
         with get_db_connection(current_app) as conn:
             cursor = conn.cursor()
             cursor.execute('UPDATE Device SET description = %s WHERE id = %s', (description, device_id))
             conn.commit()
+        logging.info(f"User {user_name} updated description for device {device_id}.")
         return redirect(url_for('device', device_id=device_id))
 
     @app.route('/subnet/<int:subnet_id>/export_csv')
@@ -523,13 +546,13 @@ def register_routes(app):
             if row:
                 dhcp_pool = {'start_ip': row[0], 'end_ip': row[1], 'excluded_ips': row[2] if len(row) > 2 else ''}
             if request.method == 'POST':
-                user_id = session.get('user_id')
+                user_name = get_current_user_name()
                 if 'remove' in request.form:
                     cursor.execute('DELETE FROM DHCPPool WHERE subnet_id = %s', (subnet_id,))
                     cursor.execute('UPDATE IPAddress SET hostname=NULL WHERE subnet_id=%s AND hostname="DHCP"', (subnet_id,))
                     conn.commit()
                     dhcp_pool = None
-                    add_audit_log(user_id, 'dhcp_pool_remove', f"Removed DHCP pool for subnet {subnet[1]} ({subnet[2]})", subnet_id, conn=conn)
+                    add_audit_log(session['user_id'], 'dhcp_pool_remove', f"Removed DHCP pool for subnet {subnet[1]} ({subnet[2]})", subnet_id, conn=conn)
                 else:
                     start_ip = request.form['start_ip']
                     end_ip = request.form['end_ip']
@@ -559,7 +582,7 @@ def register_routes(app):
                                 break
                         conn.commit()
                         dhcp_pool = {'start_ip': start_ip, 'end_ip': end_ip, 'excluded_ips': excluded_ips}
-                        add_audit_log(user_id, action, details, subnet_id, conn=conn)
+                        add_audit_log(session['user_id'], action, details, subnet_id, conn=conn)
             return render_with_user('dhcp.html', subnet={'id': subnet[0], 'name': subnet[1]}, dhcp_pool=dhcp_pool, error=error)
 
     @app.route('/device_type_stats')
@@ -638,13 +661,14 @@ def register_routes(app):
             name = request.form['name']
             site = request.form['site']
             height_u = int(request.form['height_u'])
-            user_id = session.get('user_id')
+            user_name = get_current_user_name()
             with get_db_connection(current_app) as conn:
                 cursor = conn.cursor()
                 cursor.execute('INSERT INTO Rack (name, site, height_u) VALUES (%s, %s, %s)', (name, site, height_u))
                 rack_id = cursor.lastrowid
-                add_audit_log(user_id, 'add_rack', f"Added rack '{name}' at site '{site}' ({height_u}U)", conn=conn)
+                add_audit_log(session['user_id'], 'add_rack', f"Added rack '{name}' at site '{site}' ({height_u}U)", conn=conn)
                 conn.commit()
+            logging.info(f"User {user_name} added rack '{name}' at site '{site}' ({height_u}U).")
             return redirect(url_for('racks'))
         return render_with_user('add_rack.html')
 
@@ -691,7 +715,7 @@ def register_routes(app):
         device_id = int(request.form['device_id'])
         position_u = int(request.form['position_u'])
         side = request.form['side']
-        user_id = session.get('user_id')
+        user_name = get_current_user_name()
         from flask import current_app
         with get_db_connection(current_app) as conn:
             cursor = conn.cursor(dictionary=True)
@@ -740,8 +764,9 @@ def register_routes(app):
             device_name = cursor2.fetchone()
             cursor2.execute('SELECT name FROM Rack WHERE id = %s', (rack_id,))
             rack_name = cursor2.fetchone()
-            add_audit_log(user_id, 'rack_add_device', f"Assigned device '{device_name[0] if device_name else device_id}' to rack '{rack_name[0] if rack_name else rack_id}' U{position_u} ({side})", conn=conn)
+            add_audit_log(session['user_id'], 'rack_add_device', f"Assigned device '{device_name[0] if device_name else device_id}' to rack '{rack_name[0] if rack_name else rack_id}' U{position_u} ({side})", conn=conn)
             conn.commit()
+        logging.info(f"User {user_name} assigned device {device_id} to rack {rack_id} at U{position_u} ({side}).")
         return redirect(url_for('rack', rack_id=rack_id))
 
     @app.route('/rack/<int:rack_id>/add_nonnet_device', methods=['POST'])
@@ -750,7 +775,7 @@ def register_routes(app):
         device_name = request.form['device_name']
         position_u = int(request.form['position_u'])
         side = request.form['side']
-        user_id = session.get('user_id')
+        user_name = get_current_user_name()
         from flask import current_app
         with get_db_connection(current_app) as conn:
             cursor = conn.cursor(dictionary=True)
@@ -798,15 +823,16 @@ def register_routes(app):
                 site_devices = cursor.fetchall()
                 return render_with_user('rack.html', rack=rack, rack_devices=rack_devices, site_devices=site_devices, current_side=side, error=error)
             cursor.execute('INSERT INTO RackDevice (rack_id, device_id, position_u, side, nonnet_device_name) VALUES (%s, NULL, %s, %s, %s)', (rack_id, position_u, side, device_name))
-            add_audit_log(user_id, 'rack_add_nonnet_device', f"Added non-networked device '{device_name}' to rack '{rack_id}' U{position_u} ({side})", conn=conn)
+            add_audit_log(session['user_id'], 'rack_add_nonnet_device', f"Added non-networked device '{device_name}' to rack '{rack_id}' U{position_u} ({side})", conn=conn)
             conn.commit()
+        logging.info(f"User {user_name} added non-networked device '{device_name}' to rack {rack_id} at U{position_u} ({side}).")
         return redirect(url_for('rack', rack_id=rack_id))
 
     @app.route('/rack/<int:rack_id>/remove_device', methods=['POST'])
     @login_required
     def rack_remove_device(rack_id):
         rack_device_id = int(request.form['rack_device_id'])
-        user_id = session.get('user_id')
+        user_name = get_current_user_name()
         from flask import current_app
         with get_db_connection(current_app) as conn:
             cursor = conn.cursor(dictionary=True)
@@ -821,23 +847,25 @@ def register_routes(app):
             cursor.execute('SELECT name FROM Rack WHERE id = %s', (rack_id,))
             rack_name_row = cursor.fetchone()
             rack_label = rack_name_row['name'] if rack_name_row and 'name' in rack_name_row else rack_id
-            add_audit_log(user_id, 'rack_remove_device', f"Removed device '{device_label}' from rack '{rack_label}' U{rd['position_u']} ({rd['side']})", conn=conn)
+            add_audit_log(session['user_id'], 'rack_remove_device', f"Removed device '{device_label}' from rack '{rack_label}' U{rd['position_u']} ({rd['side']})", conn=conn)
             cursor.execute('DELETE FROM RackDevice WHERE id = %s', (rack_device_id,))
             conn.commit()
+        logging.info(f"User {user_name} removed device '{device_label}' from rack {rack_label} at U{rd['position_u']} ({rd['side']}).")
         return redirect(url_for('rack', rack_id=rack_id))
 
     @app.route('/rack/<int:rack_id>/delete', methods=['POST'])
     @login_required
     def delete_rack(rack_id):
-        user_id = session.get('user_id')
+        user_name = get_current_user_name()
         from flask import current_app
         with get_db_connection(current_app) as conn:
             cursor = conn.cursor()
             cursor.execute('SELECT name FROM Rack WHERE id = %s', (rack_id,))
             rack_name = cursor.fetchone()
             cursor.execute('DELETE FROM Rack WHERE id = %s', (rack_id,))
-            add_audit_log(user_id, 'delete_rack', f"Deleted rack '{rack_name[0] if rack_name else rack_id}'", conn=conn)
+            add_audit_log(session['user_id'], 'delete_rack', f"Deleted rack '{rack_name[0] if rack_name else rack_id}'", conn=conn)
             conn.commit()
+        logging.info(f"User {user_name} deleted rack {rack_id}.")
         return redirect(url_for('racks'))
 
     @app.route('/rack/<int:rack_id>/export_csv')

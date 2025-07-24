@@ -8,19 +8,19 @@
     <link href="/static/css/output.css" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css" rel="stylesheet">
 </head>
-<body class="bg-gray-300 text-gray-900 dark:bg-gray-900 dark:text-gray-100 min-h-screen flex flex-col">
+<body class="bg-gray-300 text-gray-900 dark:bg-zinc-900 dark:text-gray-100 min-h-screen flex flex-col">
     {% include 'header.html' %}
     <div class="flex-1 flex items-center justify-center mx-4">
         <div class="container py-8 max-w-md pt-20">
             <h1 class="text-3xl font-bold mb-8 text-center">Racks</h1>
             <div class="flex justify-center mb-6">
-                <a href="/rack/add" class="bg-gray-200 hover:bg-gray-400 dark:bg-gray-700 dark:hover:bg-gray-600 px-4 py-2 rounded-lg inline-block"><i class="fas fa-plus"></i> Add Rack</a>
+                <a href="/rack/add" class="bg-gray-200 hover:bg-gray-400 dark:bg-zinc-700 dark:hover:bg-zinc-600 px-4 py-2 rounded-lg inline-block"><i class="fas fa-plus"></i> Add Rack</a>
             </div>
             <div class="space-y-6">
                 {% for rack in racks %}
-                <a href="/rack/{{ rack.id }}" class="bg-gray-200 hover:bg-gray-100 dark:bg-gray-800 hover:dark:bg-gray-700 rounded-lg shadow-md p-4 flex items-start justify-between hover:ring-2 hover:ring-gray-400 transition group">
+                <a href="/rack/{{ rack.id }}" class="bg-gray-200 hover:bg-gray-100 dark:bg-zinc-800 hover:dark:bg-zinc-700 rounded-lg shadow-md p-4 flex items-start justify-between hover:ring-2 hover:ring-gray-400 transition group">
                     <div>
-                        <h2 class="text-xl font-bold dark:text-blue-200 mb-1">{{ rack.name }}</h2>
+                        <h2 class="text-xl font-bold dark:text-white mb-1">{{ rack.name }}</h2>
                         <div class="dark:text-gray-400">Site: {{ rack.site }} | Height: {{ rack.height_u }}U</div>
                     </div>
                     <div class="ml-6 flex-shrink-0">

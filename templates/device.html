@@ -8,16 +8,16 @@
     <link href="/static/css/output.css" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css" rel="stylesheet">
 </head>
-<body class="bg-gray-300 text-gray-900 dark:bg-gray-900 dark:text-gray-100 min-h-screen flex flex-col">
+<body class="bg-gray-300 text-gray-900 dark:bg-zinc-900 dark:text-gray-100 min-h-screen flex flex-col">
     {% include 'header.html' %}
     <div class="flex-1 flex items-center justify-center mx-4">
             <div class="container py-8 w-auto min-w-[20rem] max-w-2xl pt-20">
                 <div class="flex items-center mb-8 relative justify-between gap-4">
-                    <a href="javascript:window.history.back()" class="hidden sm:flex bg-gray-200 hover:bg-gray-400 dark:bg-gray-700 dark:hover:bg-gray-600 flex items-center justify-center rounded-full w-11 h-11 shrink-0"><i class="fas fa-arrow-left"></i></a>
+                    <a href="javascript:window.history.back()" class="hidden sm:flex bg-gray-200 hover:bg-gray-400 dark:bg-zinc-700 dark:hover:bg-zinc-600 flex items-center justify-center rounded-full w-11 h-11 shrink-0"><i class="fas fa-arrow-left"></i></a>
                     <h1 class="text-3xl font-bold text-center flex-1 min-w-0 truncate">{{ device.name }}</h1>
                     <form action="/update_device_type" method="POST" class="hidden md:inline ml-2">
                         <input type="hidden" name="device_id" value="{{ device.id }}">
-                        <select name="device_type_id" class="border p-2 rounded bg-gray-200 dark:bg-gray-800 border-gray-600" onchange="this.form.submit()">
+                        <select name="device_type_id" class="border p-2 rounded bg-gray-200 dark:bg-zinc-800 border-gray-600" onchange="this.form.submit()">
                             {% for dtype in device_types %}
                                 <option value="{{ dtype[0] }}" {% if device.device_type_id == dtype[0] %}selected{% endif %}>{{ dtype[1] }}</option>
                             {% endfor %}
@@ -26,7 +26,7 @@
                     <div class="flex items-center shrink-0">
                         <form action="/rename_device" method="POST" class="inline">
                             <input type="hidden" name="device_id" value="{{ device.id }}">
-                            <input type="text" name="new_name" value="{{ device.name }}" class="hidden border p-1 rounded bg-gray-200 dark:bg-gray-800 border-gray-600 w-32 mr-2" style="vertical-align: middle;" required>
+                            <input type="text" name="new_name" value="{{ device.name }}" class="hidden border p-1 rounded bg-gray-200 dark:bg-zinc-800 border-gray-600 w-32 mr-2" style="vertical-align: middle;" required>
                             <button type="button" class="text-blue-400 hover:text-blue-600 ml-2 rename-btn" title="Rename Device"><i class="fas fa-pencil-alt"></i></button>
                             <button type="submit" class="text-green-400 hover:text-green-600 ml-2 save-btn hidden" title="Save Name"><i class="fas fa-check"></i></button>
                             <button type="button" class="text-gray-400 hover:text-gray-600 ml-2 cancel-btn hidden" title="Cancel"><i class="fas fa-times"></i></button>
@@ -41,30 +41,30 @@
                 </div>
                 <form action="/device/{{ device.id }}/add_ip" method="POST" class="mb-6">
                     <div class="flex flex-col space-y-4">
-                        <select name="site" id="site-select" class="border p-3 rounded-lg bg-gray-200 dark:bg-gray-800 border-gray-600 w-full" required>
+                        <select name="site" id="site-select" class="border p-3 rounded-lg bg-gray-200 dark:bg-zinc-800 border-gray-600 w-full" required>
                             <option value="" disabled selected>Select Site...</option>
                             {% set sites = subnets | map(attribute='site') | unique | list %}
                             {% for site in sites %}
                             <option value="{{ site }}">{{ site }}</option>
                             {% endfor %}
                         </select>
-                        <select name="subnet_id" id="subnet-select" class="border p-3 rounded-lg bg-gray-200 dark:bg-gray-800 border-gray-600 w-full" required>
+                        <select name="subnet_id" id="subnet-select" class="border p-3 rounded-lg bg-gray-200 dark:bg-zinc-800 border-gray-600 w-full" required>
                             <option value="" disabled selected>Select Subnet...</option>
                             {% for subnet in subnets %}
                             <option value="{{ subnet.id }}" data-site="{{ subnet.site }}">{{ subnet.name }} ({{ subnet.cidr }})</option>
                             {% endfor %}
                         </select>
-                        <select name="ip_id" id="ip-select" class="border p-3 rounded-lg bg-gray-200 dark:bg-gray-800 border-gray-600 w-full" required>
+                        <select name="ip_id" id="ip-select" class="border p-3 rounded-lg bg-gray-200 dark:bg-zinc-800 border-gray-600 w-full" required>
                             <option value="" disabled selected>Select IP...</option>
                         </select>
-                        <button type="submit" class="bg-gray-200 hover:bg-gray-400 dark:bg-gray-700 dark:hover:bg-gray-600 px-4 py-2 rounded-lg w-full">Add IP</button>
+                        <button type="submit" class="bg-gray-200 hover:bg-gray-400 dark:bg-zinc-700 dark:hover:bg-zinc-600 px-4 py-2 rounded-lg w-full">Add IP</button>
                     </div>
                 </form>
                 <div class="allocated-ips">
                     <h3 class="text-lg font-bold mb-2">Allocated IPs:</h3>
                     <ul class="space-y-2">
                         {% for ip in device_ips %}
-                        <li class="flex justify-between items-center bg-gray-200 dark:bg-gray-700 p-2 rounded-lg">
+                        <li class="flex justify-between items-center bg-gray-200 dark:bg-zinc-700 p-2 rounded-lg">
                             <span class="allocated-ip">{{ ip.ip }}</span>
                             <form action="/device/{{ device.id }}/delete_ip" method="POST" class="inline">
                                 <input type="hidden" name="device_ip_id" value="{{ ip.device_ip_id }}">
@@ -77,8 +77,8 @@
                 <form action="/update_device_description" method="POST" class="mb-6 mt-4">
                     <input type="hidden" name="device_id" value="{{ device.id }}">
                     <label for="description" class="block mb-2 text-lg font-bold">Description</label>
-                    <textarea id="description" name="description" rows="3" class="border p-2 rounded-lg bg-gray-200 dark:bg-gray-800 border-gray-600 w-full resize-y" placeholder="Enter device description...">{{ device.description or '' }}</textarea>
-                    <button type="submit" class="bg-gray-200 hover:bg-gray-400 dark:bg-gray-700 dark:hover:bg-gray-600 px-4 py-2 rounded-lg w-full mt-2">Save Description</button>
+                    <textarea id="description" name="description" rows="3" class="border p-2 rounded-lg bg-gray-200 dark:bg-zinc-800 border-gray-600 w-full resize-y" placeholder="Enter device description...">{{ device.description or '' }}</textarea>
+                    <button type="submit" class="bg-gray-200 hover:bg-gray-400 dark:bg-zinc-700 dark:hover:bg-zinc-600 px-4 py-2 rounded-lg w-full mt-2">Save Description</button>
                 </form>
             </div>
         </div>

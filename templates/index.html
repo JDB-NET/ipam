@@ -8,28 +8,28 @@
     <link href="/static/css/output.css" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css" rel="stylesheet">
 </head>
-<body class="bg-gray-300 text-gray-900 dark:bg-gray-900 dark:text-gray-100 min-h-screen flex flex-col">
+<body class="bg-gray-300 text-gray-900 dark:bg-zinc-900 dark:text-gray-100 min-h-screen flex flex-col">
     {% include 'header.html' %}
     <div class="flex-1 flex items-center justify-center mx-4">
         <div class="container py-8 max-w-md pt-20">
             <h1 class="text-3xl font-bold mb-6 text-center">{{ NAME }} IPAM</h1>
             <ul class="space-y-4">
                 {% for site, subnets in sites_subnets.items() %}
-                <li class="site-group bg-gray-200 dark:bg-gray-800 rounded-xl shadow-lg">
+                <li class="site-group bg-gray-200 dark:bg-zinc-800 rounded-xl shadow-lg">
                     <div class="flex flex-row items-center justify-between p-4 cursor-pointer site-header">
-                        <h2 class="text-xl font-bold mb-0 text-gray-900 dark:text-blue-300">{{ site }}</h2>
+                        <h2 class="text-xl font-bold mb-0 text-gray-900 dark:text-white">{{ site }}</h2>
                         <button type="button" class="expand-btn ml-2 flex items-center" aria-label="Expand site">
                             <i class="fas fa-chevron-down"></i>
                         </button>
                     </div>
                     <ul class="subnet-list hidden space-y-4 px-2 pb-4">
                         {% for subnet in subnets %}
-                        <li class="p-4 bg-gray-300 hover:bg-gray-100 dark:bg-gray-900 hover:dark:bg-gray-700 rounded-lg shadow-md flex items-center justify-between">
+                        <li class="p-4 bg-gray-300 hover:bg-gray-100 dark:bg-zinc-900 hover:dark:bg-zinc-700 rounded-lg shadow-md flex items-center justify-between">
                             <a href="/subnet/{{ subnet.id }}">
-                                <p class="text-gray-900 dark:text-blue-400 text-lg font-medium">{{ subnet.name }}</p>
+                                <p class="text-gray-900 dark:text-white text-lg font-medium">{{ subnet.name }}</p>
                                 <p class="text-sm text-gray-800 dark:text-gray-400">{{ subnet.cidr }}</p>
                             </a>
-                            <button type="button" class="export-csv-btn ml-2 bg-gray-200 hover:bg-gray-400 dark:bg-gray-600 dark:hover:bg-gray-500 flex items-center justify-center rounded-full w-9 h-9" title="Export as CSV" data-subnet-id="{{ subnet.id }}">
+                            <button type="button" class="export-csv-btn ml-2 bg-gray-200 hover:bg-gray-400 dark:bg-zinc-600 dark:hover:bg-zinc-500 flex items-center justify-center rounded-full w-9 h-9" title="Export as CSV" data-subnet-id="{{ subnet.id }}">
                                 <i class="fas fa-file-csv"></i>
                             </button>
                         </li>

@@ -8,7 +8,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const searchInput = document.createElement('input');
         searchInput.type = 'text';
         searchInput.placeholder = 'Search by IP or Hostname';
-        searchInput.className = 'p-2 w-full rounded-lg bg-gray-200 dark:bg-gray-800 border border-gray-600 focus:outline-none focus:border-blue-400 mb-4 text-center';
+        searchInput.className = 'p-2 w-full rounded-lg bg-gray-200 dark:bg-zinc-800 border border-gray-600 focus:outline-none focus:border-blue-400 mb-4 text-center';
         form.insertAdjacentElement('beforebegin', searchInput);
 
         searchInput.addEventListener('keypress', (event) => {
@@ -40,7 +40,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const scrollToTopButton = document.createElement('button');
     scrollToTopButton.innerHTML = '<i class="fas fa-arrow-up"></i>';
     scrollToTopButton.style.fontSize = '26px';
-    scrollToTopButton.className = 'fixed bottom-5 right-5 bg-gray-200 dark:bg-gray-800 text-black dark:text-white p-3 rounded-full shadow-lg hidden';
+    scrollToTopButton.className = 'fixed bottom-5 right-5 bg-gray-200 dark:bg-zinc-800 text-black dark:text-white p-3 rounded-full shadow-lg hidden';
     scrollToTopButton.style.width = '60px';
     scrollToTopButton.style.height = '60px';
     scrollToTopButton.style.borderRadius = '50%';

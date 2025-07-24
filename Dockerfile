@@ -9,4 +9,4 @@ RUN curl -sLO https://github.com/tailwindlabs/tailwindcss/releases/latest/downlo
     && mv tailwindcss-linux-x64 tailwindcss \
     && ./tailwindcss -i ./static/css/input.css -o ./static/css/output.css --content "./templates/*.html,./static/js/*.js" --minify
 EXPOSE 5000
-CMD ["python", "app.py"]
+CMD ["gunicorn", "--bind", "0.0.0.0:5000", "app:app", "--workers", "3", "--log-level", "warning"]
