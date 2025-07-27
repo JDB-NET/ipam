@@ -3,7 +3,7 @@ stages:
   - deploy
 
 variables:
-  IMAGE_NAME: "$HARBOR_REGISTRY/internal/ipam"
+  IMAGE_NAME: "$HARBOR_REGISTRY/public/ipam"
 
 buildandpush:
   stage: buildandpush
@@ -16,10 +16,6 @@ buildandpush:
     - docker tag $IMAGE_NAME:$IMAGE_TAG $IMAGE_NAME:latest
     - docker push $IMAGE_NAME:$IMAGE_TAG
     - docker push $IMAGE_NAME:latest
-    - docker tag $IMAGE_NAME:$IMAGE_TAG $HARBOR_REGISTRY/public/ipam:$IMAGE_TAG
-    - docker tag $IMAGE_NAME:$IMAGE_TAG $HARBOR_REGISTRY/public/ipam:latest
-    - docker push $HARBOR_REGISTRY/public/ipam:$IMAGE_TAG
-    - docker push $HARBOR_REGISTRY/public/ipam:latest
 
 deploy:
   stage: deploy
