@@ -19,7 +19,7 @@ app.config['MYSQL_DATABASE'] = os.environ.get('MYSQL_DATABASE', 'ipam')
 def inject_env_vars():
     return {
         'NAME': os.environ.get('NAME', 'JDB-NET'),
-        'LOGO_PNG': os.environ.get('LOGO_PNG', 'https://assets.jdbnet.co.uk/logo/128x128.png')
+        'LOGO_PNG': os.environ.get('LOGO_PNG', 'https://assets.s3.jdbnet.co.uk/logo/128x128.png')
     }
 
 register_routes(app)
