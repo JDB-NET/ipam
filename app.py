@@ -17,9 +17,20 @@ app.config['MYSQL_DATABASE'] = os.environ.get('MYSQL_DATABASE', 'ipam')
 
 @app.context_processor
 def inject_env_vars():
+    # Read version from VERSION file
+    version = 'unknown'
+    try:
+        version_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'VERSION')
+        if os.path.exists(version_file):
+            with open(version_file, 'r') as f:
+                version = f.read().strip()
+    except Exception:
+        pass
+    
     return {
         'NAME': os.environ.get('NAME', 'JDB-NET'),
-        'LOGO_PNG': os.environ.get('LOGO_PNG', 'https://assets.s3.jdbnet.co.uk/logo/128x128.png')
+        'LOGO_PNG': os.environ.get('LOGO_PNG', 'https://assets.s3.jdbnet.co.uk/logo/128x128.png'),
+        'VERSION': version
     }
 
 register_routes(app)
