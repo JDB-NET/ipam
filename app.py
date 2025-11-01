@@ -17,7 +17,6 @@ app.config['MYSQL_DATABASE'] = os.environ.get('MYSQL_DATABASE', 'ipam')
 
 @app.context_processor
 def inject_env_vars():
-    # Read version from VERSION file
     version = 'unknown'
     try:
         version_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'VERSION')
