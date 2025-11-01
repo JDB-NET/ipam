@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.1](https://github.com/JDB-NET/ipam/compare/v1.1.0...v1.1.1) (2025-11-01)
+
+
+### Bug Fixes
+
+* :bug: image name ([de123fa](https://github.com/JDB-NET/ipam/commit/de123fafd40d97ea6e545bd8dd1d3a812e2a709f))
+
 ## [1.1.0](https://github.com/JDB-NET/ipam/compare/v1.0.0...v1.1.0) (2025-11-01)
 
 
