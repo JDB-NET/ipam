@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.4.0](https://github.com/JDB-NET/ipam/compare/v1.3.0...v1.4.0) (2025-11-06)
+
+
+### Features
+
+* :sparkles: full api integration ([c53472c](https://github.com/JDB-NET/ipam/commit/c53472c5d760e28e53a737cb0546e85c9a422d15))
+
 ## [1.3.0](https://github.com/JDB-NET/ipam/compare/v1.2.0...v1.3.0) (2025-11-06)
 
 
