@@ -17,6 +17,8 @@ A Flask-based web application for comprehensive IP Address Management (IPAM). Ma
 - **Site Organization**: Organize subnets and devices by site/location
 - **Audit Logging**: Complete audit trail of all changes with user, action, details, and timestamps
 - **User Management**: Multi-user support with secure password authentication
+- **Role-Based Access Control (RBAC)**: Granular permission system with default roles (admin, user, view_only) and custom role creation
+- **REST API**: Full-featured REST API with API key authentication for programmatic access
 - **CSV Export**: Export subnet and rack data to CSV files
 - **Device Statistics**: View device counts by type
 - **Web Interface**: Modern, responsive web GUI built with Tailwind CSS and dark mode support
@@ -142,6 +144,61 @@ View all changes and actions in the "Audit Log" section, with filtering by user,
 - **Subnet CSV**: Click "Export CSV" on any subnet page to download IP addresses with hostnames
 - **Rack CSV**: Click "Export CSV" on any rack page to download rack layout information
 
+### Role-Based Access Control
+
+The system uses a granular role-based access control (RBAC) system to manage user permissions:
+
+1. **Default Roles**:
+   - **Admin**: Full access to all features including user and role management
+   - **User**: Can view and manage most features (devices, subnets, racks, etc.) but cannot manage users or roles
+   - **View Only**: Read-only access to view pages but cannot make any changes
+
+2. **Custom Roles**: Administrators can create custom roles with specific permission sets from the Users page
+
+3. **Permission Granularity**: Permissions are organized into categories:
+   - View permissions (access to pages)
+   - Device Management (add, edit, delete devices)
+   - Network Management (subnet operations)
+   - Rack Management (rack operations)
+   - DHCP Configuration
+   - Administration (user and role management)
+
+4. **User Management**: Navigate to the Users page to:
+   - Create and manage users
+   - Assign roles to users
+   - Create custom roles with specific permissions
+   - View and regenerate API keys
+
+### REST API
+
+The application includes a comprehensive REST API for programmatic access:
+
+1. **Authentication**: All API requests require an API key, which can be provided via:
+   - `X-API-Key` header
+   - `Authorization: Bearer <api_key>` header
+   - `?api_key=<api_key>` query parameter
+
+2. **Base URL**: All API endpoints are prefixed with `/api/v1`
+
+3. **Available Endpoints**:
+   - **Devices**: `GET`, `POST`, `PUT`, `DELETE /api/v1/devices`
+   - **Subnets**: `GET`, `POST`, `PUT`, `DELETE /api/v1/subnets`
+   - **Racks**: `GET`, `POST`, `DELETE /api/v1/racks`
+   - **Device Types**: `GET /api/v1/device-types`
+   - **DHCP**: `GET`, `POST /api/v1/subnets/{id}/dhcp`
+   - **Audit Log**: `GET /api/v1/audit`
+   - **Users & Roles**: `GET /api/v1/users`, `GET /api/v1/roles` (admin only)
+
+4. **API Keys**: Each user has a unique API key that can be viewed and regenerated from the Users page. API keys respect the same role-based permissions as the web interface.
+
+5. **Documentation**: Full API documentation is available in the Help page of the web interface.
+
+**Example API Request**:
+```bash
+curl -H "X-API-Key: your_api_key" \
+     https://your-server:5000/api/v1/devices
+```
+
 ## Kubernetes Deployment
 
 The project includes a Kubernetes deployment manifest. See `deployment.yml` for details.
@@ -190,6 +247,9 @@ spec:
 - Ensure database connections are secured (consider SSL/TLS for MySQL connections)
 - Review audit logs regularly for unauthorized changes
 - Limit database user permissions if possible (though CREATE/ALTER may be needed for schema initialization)
+- **API Keys**: Keep API keys secure and never share them publicly. Regenerate keys if they may have been compromised
+- **Role-Based Access**: Use the RBAC system to grant users only the permissions they need (principle of least privilege)
+- **HTTPS**: Use HTTPS in production to protect API keys and session data in transit
 
 ## Troubleshooting
 

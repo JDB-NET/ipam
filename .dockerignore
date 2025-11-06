@@ -1,2 +1,51 @@
+# Documentation
+README.md
+CHANGELOG.md
+*.md
+
+# Deployment files
 deployment.yml
 run.sh
+Dockerfile
+.dockerignore
+
+# Git
+.git
+.gitignore
+.gitattributes
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Virtual environments
+venv/
+env/
+ENV/
+.venv
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Logs
+*.log
+logs/
+
+# Build tools
+tailwindcss
+
+# OS files
+.DS_Store
+Thumbs.db
