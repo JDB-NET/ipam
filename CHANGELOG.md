@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.4.1](https://github.com/JDB-NET/ipam/compare/v1.4.0...v1.4.1) (2025-11-06)
+
+
+### Bug Fixes
+
+* :bug: pagination no longer gets out of control ([80b6de3](https://github.com/JDB-NET/ipam/commit/80b6de395fc4ddb4e7cd3ece89b423af2667d298))
+* :bug: styling of admin and users pages ([d56e064](https://github.com/JDB-NET/ipam/commit/d56e0647f74fba1db1f504e02364406691ede9f3))
+
 ## [1.4.0](https://github.com/JDB-NET/ipam/compare/v1.3.0...v1.4.0) (2025-11-06)
 
 
