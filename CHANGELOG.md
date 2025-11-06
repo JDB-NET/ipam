@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.3.0](https://github.com/JDB-NET/ipam/compare/v1.2.0...v1.3.0) (2025-11-06)
+
+
+### Features
+
+* :sparkles: role based access control ([3bf2697](https://github.com/JDB-NET/ipam/commit/3bf269701030bc1f14a48c5af488286c424dbfa7))
+
 ## [1.2.0](https://github.com/JDB-NET/ipam/compare/v1.1.1...v1.2.0) (2025-11-06)
 
 
