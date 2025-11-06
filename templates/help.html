@@ -19,7 +19,7 @@
                     <div class="space-y-4">
                         <div>
                             <h3 class="text-xl font-semibold mb-1">Managing Subnets</h3>
-                            <p>To add or remove subnets, go to the <a href="/admin" class="text-blue-600 dark:text-blue-400 hover:underline">Admin</a> page. Click <span class="bg-gray-300 dark:bg-zinc-700 px-2 py-1 rounded">Add Subnet</span> to create a new subnet. Subnets are associated with sites.</p>
+                            <p>To add or edit subnets, go to the <a href="/admin" class="text-blue-600 dark:text-blue-400 hover:underline">Admin</a> page. Click <span class="bg-gray-300 dark:bg-zinc-700 px-2 py-1 rounded">Add Subnet</span> to create a new subnet, or use the edit button to modify existing subnets. Subnets are associated with sites and can be organised by location.</p>
                         </div>
                         <div>
                             <h3 class="text-xl font-semibold mb-1">Adding a Device</h3>
@@ -56,12 +56,29 @@
                     <h2 class="text-2xl font-semibold mb-4 border-b border-gray-700 pb-2">User Management & Audit</h2>
                     <div class="space-y-4">
                         <div>
-                            <h3 class="text-xl font-semibold mb-1">User Management & Admin</h3>
-                            <p>Users can manage themselves and other users from the <a href="/users" class="text-blue-600 dark:text-blue-400 hover:underline">Users</a> page. Use this area to add, remove, or update user accounts.</p>
+                            <h3 class="text-xl font-semibold mb-1">User & Role Management</h3>
+                            <p>Administrators can manage users and roles from the <a href="/users" class="text-blue-600 dark:text-blue-400 hover:underline">Users</a> page. This includes creating users, assigning roles, and managing custom roles with specific permission sets. Only users with the appropriate permissions can access this page.</p>
+                        </div>
+                        <div>
+                            <h3 class="text-xl font-semibold mb-1">Understanding Roles</h3>
+                            <p>The system uses role-based access control to manage what users can do. There are three default roles:</p>
+                            <ul class="list-disc list-inside mt-2 space-y-1 ml-4">
+                                <li><strong>Admin:</strong> Full access to all features including user and role management</li>
+                                <li><strong>User:</strong> Can view and manage most features (devices, subnets, racks, etc.) but cannot manage users or roles</li>
+                                <li><strong>View Only:</strong> Read-only access to view pages but cannot make any changes</li>
+                            </ul>
+                        </div>
+                        <div>
+                            <h3 class="text-xl font-semibold mb-1">Custom Roles</h3>
+                            <p>Administrators can create custom roles with specific permission sets. Go to the <a href="/users" class="text-blue-600 dark:text-blue-400 hover:underline">Users</a> page and click the "Roles & Permissions" tab to create and manage roles.</p>
+                        </div>
+                        <div>
+                            <h3 class="text-xl font-semibold mb-1">Permission Granularity</h3>
+                            <p>Permissions are very granular, allowing fine-grained control over what each role can do. Permissions are organised into categories like View, Device Management, Network Management, Rack Management, and Administration.</p>
                         </div>
                         <div>
                             <h3 class="text-xl font-semibold mb-1">Audit & History</h3>
-                            <p>All changes are logged and can be reviewed on the <a href="/audit" class="text-blue-600 dark:text-blue-400 hover:underline">Audit</a> page for accountability and troubleshooting.</p>
+                            <p>All changes are logged and can be reviewed on the <a href="/audit" class="text-blue-600 dark:text-blue-400 hover:underline">Audit</a> page for accountability and troubleshooting. The audit log shows who made changes, what was changed, and when.</p>
                         </div>
                     </div>
                 </div>

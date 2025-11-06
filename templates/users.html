@@ -3,46 +3,525 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>User Management</title>
+    <title>User & Role Management</title>
     <link rel="icon" type="image/png" href="{{ LOGO_PNG }}">
     <link href="/static/css/output.css" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css" rel="stylesheet">
 </head>
 <body class="bg-gray-300 text-gray-900 dark:bg-zinc-900 dark:text-gray-100 min-h-screen flex flex-col">
     {% include 'header.html' %}
-    <div class="flex-1 flex items-center justify-center mx-4">
-        <div class="container py-8 max-w-6xl pt-20">
-            <h1 class="text-3xl font-bold mb-6 text-center">User Management</h1>
-            <form action="/users" method="POST" class="mb-8 bg-gray-200 dark:bg-zinc-800 p-6 rounded-lg shadow-md">
-                <input type="hidden" name="action" value="add">
-                <div class="flex flex-col space-y-4 items-center w-full">
-                    <input type="text" name="name" placeholder="Name" class="border p-3 rounded-lg bg-gray-300 text-gray-900 dark:bg-zinc-900 dark:text-gray-100 border-gray-600 w-full" required>
-                    <input type="email" name="email" placeholder="Email Address" class="border p-3 rounded-lg bg-gray-300 text-gray-900 dark:bg-zinc-900 dark:text-gray-100 border-gray-600 w-full" required>
-                    <input type="password" name="password" placeholder="Password" class="border p-3 rounded-lg bg-gray-300 text-gray-900 dark:bg-zinc-900 dark:text-gray-100 border-gray-600 w-full" required>
-                    <button type="submit" class="bg-gray-300 hover:bg-gray-400 dark:bg-zinc-700 dark:hover:bg-zinc-600 hover:cursor-pointer px-4 py-2 rounded-lg max-w-md w-full sm:w-auto">Add User</button>
+    <div class="flex-1 mx-4 py-8 pt-20">
+        <div class="container max-w-7xl mx-auto">
+            <h1 class="text-3xl font-bold mb-6 text-center">User & Role Management</h1>
+            
+            {% if error %}
+            <div class="bg-red-200 dark:bg-red-800 text-red-800 dark:text-red-200 p-4 rounded-lg mb-6">
+                {{ error }}
+            </div>
+            {% endif %}
+            
+            <!-- Tabs -->
+            <div class="mb-6 border-b border-gray-600">
+                <button onclick="showTab('users')" id="tab-users" class="tab-button px-6 py-3 font-medium border-b-2 border-blue-500 text-blue-600 dark:text-blue-400 hover:text-gray-800 dark:hover:text-gray-200 hover:cursor-pointer">
+                    Users
+                </button>
+                <button onclick="showTab('roles')" id="tab-roles" class="tab-button px-6 py-3 font-medium border-b-2 border-transparent text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 hover:cursor-pointer">
+                    Roles & Permissions
+                </button>
+            </div>
+            
+            <!-- Users Tab -->
+            <div id="users-tab" class="tab-content">
+                {% if can_manage_users %}
+                <div class="bg-gray-200 dark:bg-zinc-800 p-6 rounded-lg shadow-md mb-8">
+                    <h2 class="text-xl font-bold mb-4">Add New User</h2>
+                    <form action="/users" method="POST" class="space-y-4">
+                        <input type="hidden" name="action" value="add_user">
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <input type="text" name="name" placeholder="Name" class="border p-3 rounded-lg bg-gray-300 text-gray-900 dark:bg-zinc-900 dark:text-gray-100 border-gray-600" required>
+                            <input type="email" name="email" placeholder="Email Address" class="border p-3 rounded-lg bg-gray-300 text-gray-900 dark:bg-zinc-900 dark:text-gray-100 border-gray-600" required>
+                            <input type="password" name="password" placeholder="Password" class="border p-3 rounded-lg bg-gray-300 text-gray-900 dark:bg-zinc-900 dark:text-gray-100 border-gray-600" required>
+                            <select name="role_id" class="border p-3 rounded-lg bg-gray-300 text-gray-900 dark:bg-zinc-900 dark:text-gray-100 border-gray-600">
+                                <option value="">No Role</option>
+                                {% for role in roles %}
+                                <option value="{{ role[0] }}">{{ role[1] }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <button type="submit" class="bg-gray-300 hover:bg-gray-400 dark:bg-zinc-700 dark:hover:bg-zinc-600 hover:cursor-pointer px-4 py-2 rounded-lg">Add User</button>
+                    </form>
                 </div>
-            </form>
-            <h2 class="text-xl font-bold mb-4">Existing Users</h2>
-            <ul class="space-y-4">
-                {% for user in users %}
-                <li class="bg-gray-200 dark:bg-zinc-800 p-4 rounded-lg flex justify-between items-center">
-                    <form action="/users" method="POST" class="flex flex-row items-center space-x-2">
-                        <input type="hidden" name="action" value="edit">
-                        <input type="hidden" name="user_id" value="{{ user[0] }}">
-                        <input type="text" name="name" value="{{ user[1] }}" class="border p-2 rounded-lg bg-gray-300 text-gray-900 dark:bg-zinc-900 dark:text-gray-100 border-gray-600 w-52">
-                        <input type="email" name="email" value="{{ user[2] }}" class="border p-2 rounded-lg bg-gray-300 text-gray-900 dark:bg-zinc-900 dark:text-gray-100 border-gray-600 w-80">
-                        <input type="password" name="password" placeholder="New Password (leave blank to keep)" class="border p-2 rounded-lg bg-gray-300 text-gray-900 dark:bg-zinc-900 dark:text-gray-100 border-gray-600 w-80">
-                        <button type="submit" class="bg-gray-300 hover:bg-gray-400 dark:bg-zinc-700 dark:hover:bg-zinc-600 hover:cursor-pointer px-3 py-1 rounded-lg">Save</button>
-                    </form>
-                    <form action="/users" method="POST" onsubmit="return confirm('Are you sure you want to delete this user?');">
-                        <input type="hidden" name="action" value="delete">
-                        <input type="hidden" name="user_id" value="{{ user[0] }}">
-                        <button type="submit" class="text-red-500 hover:text-red-700 hover:cursor-pointer mx-4" title="Delete User"><i class="fas fa-trash"></i></button>
-                    </form>
-                </li>
-                {% endfor %}
-            </ul>
+                {% endif %}
+                
+                <h2 class="text-xl font-bold mb-4">Existing Users</h2>
+                <div class="bg-gray-200 dark:bg-zinc-800 p-6 rounded-lg shadow-md">
+                    <div class="overflow-x-auto">
+                        <table class="w-full">
+                            <thead>
+                                <tr class="border-b border-gray-600">
+                                    <th class="text-left p-2">Name</th>
+                                    <th class="text-left p-2">Email</th>
+                                    <th class="text-left p-2">Role</th>
+                                    {% if can_manage_users %}
+                                    <th class="text-left p-2">Actions</th>
+                                    {% endif %}
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for user in users %}
+                                <tr class="border-b border-gray-600">
+                                    <td class="p-2">{{ user[1] }}</td>
+                                    <td class="p-2">{{ user[2] }}</td>
+                                    <td class="p-2">
+                                        <span class="px-2 py-1 bg-blue-200 dark:bg-blue-800 rounded">{{ user[4] or 'No Role' }}</span>
+                                    </td>
+                                    {% if can_manage_users %}
+                                    <td class="p-2">
+                                        <button onclick="editUser({{ user[0] }}, '{{ user[1]|replace("'", "\\'") }}', '{{ user[2]|replace("'", "\\'") }}', {{ user[3] if user[3] else 'null' }})" class="text-blue-500 hover:text-blue-700 mr-4 hover:cursor-pointer" title="Edit User">
+                                            <i class="fas fa-edit"></i>
+                                        </button>
+                                        <form action="/users" method="POST" onsubmit="return confirm('Are you sure you want to delete this user?');" class="inline">
+                                            <input type="hidden" name="action" value="delete_user">
+                                            <input type="hidden" name="user_id" value="{{ user[0] }}">
+                                            <button type="submit" class="text-red-500 hover:text-red-700 hover:cursor-pointer" title="Delete User">
+                                                <i class="fas fa-trash"></i>
+                                            </button>
+                                        </form>
+                                    </td>
+                                    {% endif %}
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Roles Tab -->
+            <div id="roles-tab" class="tab-content hidden">
+                {% if can_manage_roles %}
+                <div class="mb-6 flex justify-end">
+                    <button type="button" onclick="showAddRoleModal(); return false;" class="bg-gray-200 hover:bg-gray-400 dark:bg-zinc-700 dark:hover:bg-zinc-600 hover:cursor-pointer px-6 py-2 rounded-lg font-medium">
+                        <i class="fas fa-plus mr-2"></i>Add New Role
+                    </button>
+                </div>
+                {% endif %}
+                
+                <h2 class="text-xl font-bold mb-4">Roles</h2>
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {% for role in roles %}
+                    <div class="bg-gray-200 dark:bg-zinc-800 p-6 rounded-lg shadow-md hover:shadow-lg transition-shadow">
+                        <div class="flex justify-between items-start mb-3">
+                            <div class="flex-1">
+                                <h3 class="text-lg font-bold mb-1">{{ role[1] }}</h3>
+                                {% if role[2] %}
+                                <p class="text-sm text-gray-600 dark:text-gray-400 mb-3">{{ role[2] }}</p>
+                                {% endif %}
+                            </div>
+                            {% if can_manage_roles %}
+                            <div class="flex space-x-2">
+                                <button type="button" onclick="editRole({{ role[0] }}, '{{ role[1]|replace("'", "\\'") }}', '{{ (role[2] or '')|replace("'", "\\'") }}'); return false;" class="text-blue-500 hover:text-blue-700 hover:cursor-pointer" title="Edit Role">
+                                    <i class="fas fa-edit"></i>
+                                </button>
+                                <button type="button" onclick="deleteRole({{ role[0] }}, '{{ role[1]|replace("'", "\\'") }}'); return false;" class="text-red-500 hover:text-red-700 hover:cursor-pointer" title="Delete Role">
+                                    <i class="fas fa-trash"></i>
+                                </button>
+                            </div>
+                            {% endif %}
+                        </div>
+                        <div>
+                            <p class="text-xs text-gray-500 dark:text-gray-400 mb-2">Permissions:</p>
+                            {% set role_perms = role_permissions.get(role[0], []) %}
+                            {% set perm_dict = {} %}
+                            {% for perm in permissions %}
+                            {% set _ = perm_dict.update({perm[0]: perm[2]}) %}
+                            {% endfor %}
+                            <div class="flex flex-wrap gap-1">
+                                {% for perm_id in role_perms[:5] %}
+                                <span class="px-2 py-1 bg-green-200 dark:bg-green-800 rounded text-xs">{{ perm_dict.get(perm_id, 'Unknown') }}</span>
+                                {% endfor %}
+                                {% if role_perms|length > 5 %}
+                                <span class="px-2 py-1 bg-gray-300 dark:bg-gray-700 rounded text-xs">+{{ role_perms|length - 5 }} more</span>
+                                {% endif %}
+                                {% if not role_perms %}
+                                <span class="text-gray-500 text-xs">No permissions</span>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
         </div>
     </div>
+    
+    <!-- Edit User Modal -->
+    <div id="edit-user-modal" class="hidden fixed inset-0 bg-black/30 backdrop-blur-md flex items-center justify-center z-50">
+        <div class="bg-gray-200 dark:bg-zinc-800 p-6 rounded-lg shadow-lg max-w-md w-full mx-4">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-xl font-bold">Edit User</h2>
+                <button onclick="closeEditUserModal()" class="text-gray-500 hover:text-gray-700 hover:cursor-pointer">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <form action="/users" method="POST" class="space-y-4">
+                <input type="hidden" name="action" value="edit_user">
+                <input type="hidden" name="user_id" id="edit-user-id">
+                <input type="text" name="name" id="edit-user-name" placeholder="Name" class="border p-3 rounded-lg bg-gray-300 text-gray-900 dark:bg-zinc-900 dark:text-gray-100 border-gray-600 w-full" required>
+                <input type="email" name="email" id="edit-user-email" placeholder="Email Address" class="border p-3 rounded-lg bg-gray-300 text-gray-900 dark:bg-zinc-900 dark:text-gray-100 border-gray-600 w-full" required>
+                <input type="password" name="password" id="edit-user-password" placeholder="New Password (leave blank to keep)" class="border p-3 rounded-lg bg-gray-300 text-gray-900 dark:bg-zinc-900 dark:text-gray-100 border-gray-600 w-full">
+                <select name="role_id" id="edit-user-role" class="border p-3 rounded-lg bg-gray-300 text-gray-900 dark:bg-zinc-900 dark:text-gray-100 border-gray-600 w-full">
+                    <option value="">No Role</option>
+                    {% for role in roles %}
+                    <option value="{{ role[0] }}">{{ role[1] }}</option>
+                    {% endfor %}
+                </select>
+                <div class="flex justify-end space-x-2">
+                    <button type="button" onclick="closeEditUserModal()" class="px-4 py-2 bg-gray-200 hover:bg-gray-400 dark:bg-zinc-700 dark:hover:bg-zinc-600 hover:cursor-pointer rounded-lg">Cancel</button>
+                    <button type="submit" class="px-4 py-2 bg-gray-200 hover:bg-gray-400 dark:bg-zinc-700 dark:hover:bg-zinc-600 hover:cursor-pointer rounded-lg">Save</button>
+                </div>
+            </form>
+        </div>
+    </div>
+    
+    <!-- Add Role Modal -->
+    <div id="add-role-modal" class="hidden fixed inset-0 bg-black/30 backdrop-blur-md flex items-center justify-center z-50 overflow-y-auto py-8">
+        <div class="bg-gray-200 dark:bg-zinc-800 p-6 rounded-lg shadow-lg max-w-3xl w-full mx-4 my-8">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-xl font-bold">Add New Role</h2>
+                <button onclick="closeAddRoleModal()" class="text-gray-500 hover:text-gray-700 hover:cursor-pointer">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <form action="/users" method="POST" class="space-y-4">
+                <input type="hidden" name="action" value="add_role">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <input type="text" name="role_name" placeholder="Role Name" class="border p-3 rounded-lg bg-gray-300 text-gray-900 dark:bg-zinc-900 dark:text-gray-100 border-gray-600" required>
+                    <input type="text" name="role_description" placeholder="Description (optional)" class="border p-3 rounded-lg bg-gray-300 text-gray-900 dark:bg-zinc-900 dark:text-gray-100 border-gray-600">
+                </div>
+                <div class="mb-4">
+                    <h3 class="font-bold mb-3">Permissions</h3>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 max-h-96 overflow-y-auto border border-gray-600 rounded-lg p-4 bg-gray-300 dark:bg-zinc-900">
+                        <!-- View Permissions -->
+                        <div class="col-span-full">
+                            <h4 class="font-semibold text-base mb-2 border-b border-gray-500 pb-1">View Permissions</h4>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-2">
+                                {% for perm in permissions %}
+                                {% if perm[3] == 'View' %}
+                                <label class="flex items-center mb-2 cursor-pointer hover:bg-gray-200 dark:hover:bg-zinc-800 p-2 rounded">
+                                    <input type="checkbox" name="permissions" value="{{ perm[0] }}" class="mr-2">
+                                    <span class="text-sm">{{ perm[2] }}</span>
+                                </label>
+                                {% endif %}
+                                {% endfor %}
+                            </div>
+                        </div>
+                        
+                        <!-- Device Management -->
+                        <div>
+                            <h4 class="font-semibold text-base mb-2 border-b border-gray-500 pb-1">Device Management</h4>
+                            {% for perm in permissions %}
+                            {% if perm[3] == 'Device' %}
+                            <label class="flex items-center mb-2 cursor-pointer hover:bg-gray-200 dark:hover:bg-zinc-800 p-2 rounded">
+                                <input type="checkbox" name="permissions" value="{{ perm[0] }}" class="mr-2">
+                                <span class="text-sm">{{ perm[2] }}</span>
+                            </label>
+                            {% endif %}
+                            {% endfor %}
+                            {% for perm in permissions %}
+                            {% if perm[3] == 'Device Type' %}
+                            <label class="flex items-center mb-2 cursor-pointer hover:bg-gray-200 dark:hover:bg-zinc-800 p-2 rounded">
+                                <input type="checkbox" name="permissions" value="{{ perm[0] }}" class="mr-2">
+                                <span class="text-sm">{{ perm[2] }}</span>
+                            </label>
+                            {% endif %}
+                            {% endfor %}
+                        </div>
+                        
+                        <!-- Network Management -->
+                        <div>
+                            <h4 class="font-semibold text-base mb-2 border-b border-gray-500 pb-1">Network Management</h4>
+                            {% for perm in permissions %}
+                            {% if perm[3] == 'Subnet' %}
+                            <label class="flex items-center mb-2 cursor-pointer hover:bg-gray-200 dark:hover:bg-zinc-800 p-2 rounded">
+                                <input type="checkbox" name="permissions" value="{{ perm[0] }}" class="mr-2">
+                                <span class="text-sm">{{ perm[2] }}</span>
+                            </label>
+                            {% endif %}
+                            {% endfor %}
+                            {% for perm in permissions %}
+                            {% if perm[3] == 'DHCP' %}
+                            <label class="flex items-center mb-2 cursor-pointer hover:bg-gray-200 dark:hover:bg-zinc-800 p-2 rounded">
+                                <input type="checkbox" name="permissions" value="{{ perm[0] }}" class="mr-2">
+                                <span class="text-sm">{{ perm[2] }}</span>
+                            </label>
+                            {% endif %}
+                            {% endfor %}
+                        </div>
+                        
+                        <!-- Rack Management -->
+                        <div>
+                            <h4 class="font-semibold text-base mb-2 border-b border-gray-500 pb-1">Rack Management</h4>
+                            {% for perm in permissions %}
+                            {% if perm[3] == 'Rack' %}
+                            <label class="flex items-center mb-2 cursor-pointer hover:bg-gray-200 dark:hover:bg-zinc-800 p-2 rounded">
+                                <input type="checkbox" name="permissions" value="{{ perm[0] }}" class="mr-2">
+                                <span class="text-sm">{{ perm[2] }}</span>
+                            </label>
+                            {% endif %}
+                            {% endfor %}
+                        </div>
+                        
+                        <!-- Admin -->
+                        <div>
+                            <h4 class="font-semibold text-base mb-2 border-b border-gray-500 pb-1">Administration</h4>
+                            {% for perm in permissions %}
+                            {% if perm[3] == 'Admin' %}
+                            <label class="flex items-center mb-2 cursor-pointer hover:bg-gray-200 dark:hover:bg-zinc-800 p-2 rounded">
+                                <input type="checkbox" name="permissions" value="{{ perm[0] }}" class="mr-2">
+                                <span class="text-sm">{{ perm[2] }}</span>
+                            </label>
+                            {% endif %}
+                            {% endfor %}
+                        </div>
+                    </div>
+                </div>
+                <div class="flex justify-end space-x-2">
+                    <button type="button" onclick="closeAddRoleModal()" class="px-4 py-2 bg-gray-200 hover:bg-gray-400 dark:bg-zinc-700 dark:hover:bg-zinc-600 hover:cursor-pointer rounded-lg">Cancel</button>
+                    <button type="submit" class="px-4 py-2 bg-gray-200 hover:bg-gray-400 dark:bg-zinc-700 dark:hover:bg-zinc-600 hover:cursor-pointer rounded-lg">Add Role</button>
+                </div>
+            </form>
+        </div>
+    </div>
+    
+    <!-- Edit Role Modal -->
+    <div id="edit-role-modal" class="hidden fixed inset-0 bg-black/30 backdrop-blur-md flex items-center justify-center z-50 overflow-y-auto py-8">
+        <div class="bg-gray-200 dark:bg-zinc-800 p-6 rounded-lg shadow-lg max-w-3xl w-full mx-4 my-8">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-xl font-bold">Edit Role</h2>
+                <button onclick="closeEditRoleModal()" class="text-gray-500 hover:text-gray-700 hover:cursor-pointer">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <form action="/users" method="POST" class="space-y-4">
+                <input type="hidden" name="action" value="edit_role">
+                <input type="hidden" name="role_id" id="edit-role-id">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <input type="text" name="role_name" id="edit-role-name" placeholder="Role Name" class="border p-3 rounded-lg bg-gray-300 text-gray-900 dark:bg-zinc-900 dark:text-gray-100 border-gray-600" required>
+                    <input type="text" name="role_description" id="edit-role-description" placeholder="Description (optional)" class="border p-3 rounded-lg bg-gray-300 text-gray-900 dark:bg-zinc-900 dark:text-gray-100 border-gray-600">
+                </div>
+                <div class="mb-4">
+                    <h3 class="font-bold mb-3">Permissions</h3>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 max-h-96 overflow-y-auto border border-gray-600 rounded-lg p-4 bg-gray-300 dark:bg-zinc-900" id="edit-role-permissions">
+                        <!-- Permissions will be populated by JavaScript -->
+                    </div>
+                </div>
+                <div class="flex justify-end space-x-2">
+                    <button type="button" onclick="closeEditRoleModal()" class="px-4 py-2 bg-gray-200 hover:bg-gray-400 dark:bg-zinc-700 dark:hover:bg-zinc-600 hover:cursor-pointer rounded-lg">Cancel</button>
+                    <button type="submit" class="px-4 py-2 bg-gray-200 hover:bg-gray-400 dark:bg-zinc-700 dark:hover:bg-zinc-600 hover:cursor-pointer rounded-lg">Save</button>
+                </div>
+            </form>
+        </div>
+    </div>
+    
+    <script>
+        const permissions = {{ permissions | tojson | safe }};
+        const rolePermissions = {{ role_permissions | tojson | safe }};
+        
+        function showTab(tab) {
+            document.getElementById('users-tab').classList.add('hidden');
+            document.getElementById('roles-tab').classList.add('hidden');
+            document.getElementById('tab-users').classList.remove('border-blue-500', 'text-blue-600', 'dark:text-blue-400');
+            document.getElementById('tab-users').classList.add('border-transparent', 'text-gray-600', 'dark:text-gray-400');
+            document.getElementById('tab-roles').classList.remove('border-blue-500', 'text-blue-600', 'dark:text-blue-400');
+            document.getElementById('tab-roles').classList.add('border-transparent', 'text-gray-600', 'dark:text-gray-400');
+            
+            if (tab === 'users') {
+                document.getElementById('users-tab').classList.remove('hidden');
+                document.getElementById('tab-users').classList.remove('border-transparent', 'text-gray-600', 'dark:text-gray-400');
+                document.getElementById('tab-users').classList.add('border-blue-500', 'text-blue-600', 'dark:text-blue-400');
+            } else {
+                document.getElementById('roles-tab').classList.remove('hidden');
+                document.getElementById('tab-roles').classList.remove('border-transparent', 'text-gray-600', 'dark:text-gray-400');
+                document.getElementById('tab-roles').classList.add('border-blue-500', 'text-blue-600', 'dark:text-blue-400');
+            }
+        }
+        
+        function editUser(userId, name, email, roleId) {
+            document.getElementById('edit-user-id').value = userId;
+            document.getElementById('edit-user-name').value = name;
+            document.getElementById('edit-user-email').value = email;
+            document.getElementById('edit-user-password').value = '';
+            document.getElementById('edit-user-role').value = (roleId === null || roleId === 'null') ? '' : roleId;
+            document.getElementById('edit-user-modal').classList.remove('hidden');
+        }
+        
+        function closeEditUserModal() {
+            document.getElementById('edit-user-modal').classList.add('hidden');
+        }
+        
+        function showAddRoleModal() {
+            // Make sure edit modal is closed first
+            document.getElementById('edit-role-modal').classList.add('hidden');
+            // Clear any form data
+            const addForm = document.querySelector('#add-role-modal form');
+            if (addForm) {
+                addForm.reset();
+            }
+            // Show add modal
+            document.getElementById('add-role-modal').classList.remove('hidden');
+        }
+        
+        function closeAddRoleModal() {
+            document.getElementById('add-role-modal').classList.add('hidden');
+        }
+        
+        function editRole(roleId, roleName, roleDescription) {
+            // Make sure add modal is closed first
+            document.getElementById('add-role-modal').classList.add('hidden');
+            document.getElementById('edit-role-id').value = roleId;
+            document.getElementById('edit-role-name').value = roleName;
+            document.getElementById('edit-role-description').value = roleDescription || '';
+            
+            const permissionsDiv = document.getElementById('edit-role-permissions');
+            permissionsDiv.innerHTML = '';
+            
+            const rolePerms = rolePermissions[roleId] || [];
+            
+            // Group permissions by merged categories
+            const viewPerms = permissions.filter(p => p[3] === 'View');
+            const devicePerms = permissions.filter(p => p[3] === 'Device');
+            const deviceTypePerms = permissions.filter(p => p[3] === 'Device Type');
+            const subnetPerms = permissions.filter(p => p[3] === 'Subnet');
+            const dhcpPerms = permissions.filter(p => p[3] === 'DHCP');
+            const rackPerms = permissions.filter(p => p[3] === 'Rack');
+            const adminPerms = permissions.filter(p => p[3] === 'Admin');
+            
+            let html = '';
+            
+            // View Permissions
+            html += '                        <!-- View Permissions -->\n';
+            html += '                        <div class="col-span-full">\n';
+            html += '                            <h4 class="font-semibold text-base mb-2 border-b border-gray-500 pb-1">View Permissions</h4>\n';
+            html += '                            <div class="grid grid-cols-1 md:grid-cols-2 gap-2">\n';
+            viewPerms.forEach(perm => {
+                const checked = rolePerms.includes(perm[0]) ? 'checked' : '';
+                html += `                            <label class="flex items-center mb-2 cursor-pointer hover:bg-gray-200 dark:hover:bg-zinc-800 p-2 rounded">
+                                <input type="checkbox" name="permissions" value="${perm[0]}" ${checked} class="mr-2">
+                                <span class="text-sm">${perm[2]}</span>
+                            </label>\n`;
+            });
+            html += '                            </div>\n';
+            html += '                        </div>\n';
+            html += '                        \n';
+            
+            // Device Management
+            html += '                        <!-- Device Management -->\n';
+            html += '                        <div>\n';
+            html += '                            <h4 class="font-semibold text-base mb-2 border-b border-gray-500 pb-1">Device Management</h4>\n';
+            devicePerms.forEach(perm => {
+                const checked = rolePerms.includes(perm[0]) ? 'checked' : '';
+                html += `                            <label class="flex items-center mb-2 cursor-pointer hover:bg-gray-200 dark:hover:bg-zinc-800 p-2 rounded">
+                                <input type="checkbox" name="permissions" value="${perm[0]}" ${checked} class="mr-2">
+                                <span class="text-sm">${perm[2]}</span>
+                            </label>\n`;
+            });
+            deviceTypePerms.forEach(perm => {
+                const checked = rolePerms.includes(perm[0]) ? 'checked' : '';
+                html += `                            <label class="flex items-center mb-2 cursor-pointer hover:bg-gray-200 dark:hover:bg-zinc-800 p-2 rounded">
+                                <input type="checkbox" name="permissions" value="${perm[0]}" ${checked} class="mr-2">
+                                <span class="text-sm">${perm[2]}</span>
+                            </label>\n`;
+            });
+            html += '                        </div>\n';
+            html += '                        \n';
+            
+            // Network Management
+            html += '                        <!-- Network Management -->\n';
+            html += '                        <div>\n';
+            html += '                            <h4 class="font-semibold text-base mb-2 border-b border-gray-500 pb-1">Network Management</h4>\n';
+            subnetPerms.forEach(perm => {
+                const checked = rolePerms.includes(perm[0]) ? 'checked' : '';
+                html += `                            <label class="flex items-center mb-2 cursor-pointer hover:bg-gray-200 dark:hover:bg-zinc-800 p-2 rounded">
+                                <input type="checkbox" name="permissions" value="${perm[0]}" ${checked} class="mr-2">
+                                <span class="text-sm">${perm[2]}</span>
+                            </label>\n`;
+            });
+            dhcpPerms.forEach(perm => {
+                const checked = rolePerms.includes(perm[0]) ? 'checked' : '';
+                html += `                            <label class="flex items-center mb-2 cursor-pointer hover:bg-gray-200 dark:hover:bg-zinc-800 p-2 rounded">
+                                <input type="checkbox" name="permissions" value="${perm[0]}" ${checked} class="mr-2">
+                                <span class="text-sm">${perm[2]}</span>
+                            </label>\n`;
+            });
+            html += '                        </div>\n';
+            html += '                        \n';
+            
+            // Rack Management
+            html += '                        <!-- Rack Management -->\n';
+            html += '                        <div>\n';
+            html += '                            <h4 class="font-semibold text-base mb-2 border-b border-gray-500 pb-1">Rack Management</h4>\n';
+            rackPerms.forEach(perm => {
+                const checked = rolePerms.includes(perm[0]) ? 'checked' : '';
+                html += `                            <label class="flex items-center mb-2 cursor-pointer hover:bg-gray-200 dark:hover:bg-zinc-800 p-2 rounded">
+                                <input type="checkbox" name="permissions" value="${perm[0]}" ${checked} class="mr-2">
+                                <span class="text-sm">${perm[2]}</span>
+                            </label>\n`;
+            });
+            html += '                        </div>\n';
+            html += '                        \n';
+            
+            // Admin
+            html += '                        <!-- Admin -->\n';
+            html += '                        <div>\n';
+            html += '                            <h4 class="font-semibold text-base mb-2 border-b border-gray-500 pb-1">Administration</h4>\n';
+            adminPerms.forEach(perm => {
+                const checked = rolePerms.includes(perm[0]) ? 'checked' : '';
+                html += `                            <label class="flex items-center mb-2 cursor-pointer hover:bg-gray-200 dark:hover:bg-zinc-800 p-2 rounded">
+                                <input type="checkbox" name="permissions" value="${perm[0]}" ${checked} class="mr-2">
+                                <span class="text-sm">${perm[2]}</span>
+                            </label>\n`;
+            });
+            html += '                        </div>\n';
+            
+            permissionsDiv.innerHTML = html;
+            
+            document.getElementById('edit-role-modal').classList.remove('hidden');
+        }
+        
+        function closeEditRoleModal() {
+            document.getElementById('edit-role-modal').classList.add('hidden');
+        }
+        
+        function deleteRole(roleId, roleName) {
+            if (confirm(`Are you sure you want to delete the role "${roleName}"?`)) {
+                const form = document.createElement('form');
+                form.method = 'POST';
+                form.action = '/users';
+                form.innerHTML = `
+                    <input type="hidden" name="action" value="delete_role">
+                    <input type="hidden" name="role_id" value="${roleId}">
+                `;
+                document.body.appendChild(form);
+                form.submit();
+            }
+        }
+        
+        // Close modals when clicking outside
+        window.onclick = function(event) {
+            const editUserModal = document.getElementById('edit-user-modal');
+            const editRoleModal = document.getElementById('edit-role-modal');
+            const addRoleModal = document.getElementById('add-role-modal');
+            if (event.target === editUserModal) {
+                closeEditUserModal();
+            }
+            if (event.target === editRoleModal) {
+                closeEditRoleModal();
+            }
+            if (event.target === addRoleModal) {
+                closeAddRoleModal();
+            }
+        }
+    </script>
 </body>
 </html>

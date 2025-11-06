@@ -7,12 +7,27 @@
         {% if current_user_name %}Hello, {{ current_user_name }}{% endif %}
     </div>
     <nav class="hidden md:flex items-center space-x-6" id="main-nav">
+        {% if has_permission('view_index') %}
         <a href="/" class="text-gray-200 hover:text-gray-400 font-medium">Home</a>
+        {% endif %}
+        {% if has_permission('view_devices') %}
         <a href="/devices" class="text-gray-200 hover:text-gray-400 font-medium">Devices</a>
+        {% endif %}
+        {% if has_permission('view_racks') %}
         <a href="/racks" class="text-gray-200 hover:text-gray-400 font-medium">Racks</a>
+        {% endif %}
+        {% if has_permission('view_admin') %}
         <a href="/admin" class="text-gray-200 hover:text-gray-400 font-medium">Admin</a>
+        {% endif %}
+        {% if has_permission('view_users') %}
+        <a href="/users" class="text-gray-200 hover:text-gray-400 font-medium">Users</a>
+        {% endif %}
+        {% if has_permission('view_audit') %}
         <a href="/audit" class="text-gray-200 hover:text-gray-400 font-medium">Audit Log</a>
+        {% endif %}
+        {% if has_permission('view_help') %}
         <a href="/help" class="text-gray-200 hover:text-gray-400 font-medium">Help</a>
+        {% endif %}
         {% if current_user_name %}
         <a href="/logout" class="text-gray-200 hover:text-gray-400 font-medium">Logout</a>
         {% endif %}
@@ -23,12 +38,27 @@
         </svg>
     </button>
     <div class="md:hidden absolute top-16 right-6 bg-zinc-800 rounded-lg shadow-lg z-50 w-48 hidden flex-col py-2" id="mobile-nav">
+        {% if has_permission('view_index') %}
         <a href="/" class="block px-6 py-2 text-gray-200 hover:text-gray-400 font-medium">Home</a>
+        {% endif %}
+        {% if has_permission('view_devices') %}
         <a href="/devices" class="block px-6 py-2 text-gray-200 hover:text-gray-400 font-medium">Devices</a>
+        {% endif %}
+        {% if has_permission('view_racks') %}
         <a href="/racks" class="block px-6 py-2 text-gray-200 hover:text-gray-400 font-medium">Racks</a>
+        {% endif %}
+        {% if has_permission('view_admin') %}
         <a href="/admin" class="block px-6 py-2 text-gray-200 hover:text-gray-400 font-medium">Admin</a>
+        {% endif %}
+        {% if has_permission('view_users') %}
+        <a href="/users" class="block px-6 py-2 text-gray-200 hover:text-gray-400 font-medium">Users</a>
+        {% endif %}
+        {% if has_permission('view_audit') %}
         <a href="/audit" class="block px-6 py-2 text-gray-200 hover:text-gray-400 font-medium">Audit Log</a>
+        {% endif %}
+        {% if has_permission('view_help') %}
         <a href="/help" class="block px-6 py-2 text-gray-200 hover:text-gray-400 font-medium">Help</a>
+        {% endif %}
         {% if current_user_name %}
         <a href="/logout" class="block px-6 py-2 text-gray-200 hover:text-gray-400 font-medium">Logout</a>
         {% endif %}

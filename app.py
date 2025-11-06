@@ -1,5 +1,5 @@
-from flask import Flask
-from db import init_db, hash_password
+from flask import Flask, session
+from db import init_db, hash_password, get_db_connection
 from routes import register_routes
 import os
 from dotenv import load_dotenv
@@ -26,10 +26,14 @@ def inject_env_vars():
     except Exception:
         pass
     
+    # Import has_permission from routes after routes are registered
+    from routes import has_permission
+    
     return {
         'NAME': os.environ.get('NAME', 'JDB-NET'),
         'LOGO_PNG': os.environ.get('LOGO_PNG', 'https://assets.s3.jdbnet.co.uk/logo/128x128.png'),
-        'VERSION': version
+        'VERSION': version,
+        'has_permission': has_permission
     }
 
 register_routes(app)

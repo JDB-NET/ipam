@@ -10,44 +10,220 @@
 </head>
 <body class="bg-gray-300 text-gray-900 dark:bg-zinc-900 dark:text-gray-100 min-h-screen flex flex-col">
     {% include 'header.html' %}
-    <div class="flex-1 flex items-center justify-center mx-4">
-        <div class="container py-8 max-w-md pt-20">
-            <div class="bg-gray-200 dark:bg-zinc-800 rounded-2xl shadow-lg p-8">
-            <h1 class="text-3xl font-bold mb-6 text-center">Admin</h1>
-            <div class="flex justify-center gap-4 mb-6">
-                <a href="/audit" class="bg-gray-300 hover:bg-gray-400 dark:bg-zinc-700 dark:hover:bg-zinc-600 px-4 py-2 rounded-lg shadow text-center w-40">Audit Log</a>
-                <a href="/users" class="bg-gray-300 hover:bg-gray-400 dark:bg-zinc-700 dark:hover:bg-zinc-600 px-4 py-2 rounded-lg shadow text-center w-40">Users</a>
-            </div>
-            <hr class="border-t-2 border-gray-600 rounded-lg mb-4">
-            <h1 class="text-2xl font-bold mb-6 text-center">Add Subnet</h1>
+    <div class="flex-1 mx-4 py-8 pt-20">
+        <div class="container max-w-7xl mx-auto">
+            <h1 class="text-3xl font-bold mb-6 text-center">Admin Panel</h1>
+            
             {% if error %}
-            <div class="text-red-500 text-center mb-4">{{ error }}</div>
+            <div class="bg-red-200 dark:bg-red-800 text-red-800 dark:text-red-200 p-4 rounded-lg mb-6">
+                {{ error }}
+            </div>
             {% endif %}
-            <form action="/add_subnet" method="POST" class="mb-6" onsubmit="return validateSubnetForm();">
-                <div class="flex flex-col space-y-4">
-                    <input type="text" name="name" placeholder="Subnet Name" class="border p-3 rounded-lg bg-gray-300 dark:bg-zinc-900 border-gray-600" required>
-                    <input type="text" name="cidr" id="cidr-input" placeholder="CIDR (e.g., 192.168.1.0/24)" class="border p-3 rounded-lg bg-gray-300 dark:bg-zinc-900 border-gray-600" required>
-                    <input type="text" name="site" placeholder="Site/Location" class="border p-3 rounded-lg bg-gray-300 dark:bg-zinc-900 border-gray-600" required>
-                    <button type="submit" class="bg-gray-300 hover:bg-gray-400 dark:bg-zinc-700 dark:hover:bg-zinc-600 hover:cursor-pointer px-4 py-2 rounded-lg">Add Subnet</button>
-                    <span id="cidr-error" class="text-red-500 text-sm hidden"></span>
+            
+            <!-- Quick Links -->
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
+                <a href="/audit" class="bg-gray-200 dark:bg-zinc-800 hover:bg-gray-300 dark:hover:bg-zinc-700 p-6 rounded-lg shadow-md flex items-center justify-between transition-colors">
+                    <div class="flex items-center space-x-4">
+                        <i class="fas fa-clipboard-list text-3xl text-blue-500"></i>
+                        <div>
+                            <h3 class="text-lg font-bold">Audit Log</h3>
+                            <p class="text-sm text-gray-600 dark:text-gray-400">View system activity</p>
+                        </div>
+                    </div>
+                    <i class="fas fa-chevron-right text-gray-400"></i>
+                </a>
+                <a href="/users" class="bg-gray-200 dark:bg-zinc-800 hover:bg-gray-300 dark:hover:bg-zinc-700 p-6 rounded-lg shadow-md flex items-center justify-between transition-colors">
+                    <div class="flex items-center space-x-4">
+                        <i class="fas fa-users text-3xl text-green-500"></i>
+                        <div>
+                            <h3 class="text-lg font-bold">User Management</h3>
+                            <p class="text-sm text-gray-600 dark:text-gray-400">Manage users & roles</p>
+                        </div>
+                    </div>
+                    <i class="fas fa-chevron-right text-gray-400"></i>
+                </a>
+            </div>
+            
+            <!-- Subnet Management Section -->
+            <div class="bg-gray-200 dark:bg-zinc-800 p-6 rounded-lg shadow-md">
+                <div class="flex justify-between items-center mb-6">
+                    <h2 class="text-2xl font-bold">Subnet Management</h2>
+                    {% if can_add_subnet %}
+                    <button onclick="showAddSubnetModal()" class="bg-gray-200 hover:bg-gray-400 dark:bg-zinc-700 dark:hover:bg-zinc-600 hover:cursor-pointer px-6 py-2 rounded-lg font-medium">
+                        <i class="fas fa-plus mr-2"></i>Add Subnet
+                    </button>
+                    {% endif %}
                 </div>
-            </form>
-            <hr class="border-t-2 border-gray-600 rounded-lg mb-4">
-            <h1 class="text-2xl font-bold mb-6 text-center">Delete Subnet</h1>
-            <form action="/delete_subnet" method="POST" class="mb-6 flex items-center space-x-4 justify-center" onsubmit="return confirm('Are you sure you want to delete this subnet and all its IPs? This action is irreversible.');">
-                <select name="subnet_id" class="border p-3 rounded-lg bg-gray-300 dark:bg-zinc-900 border-gray-600" required>
-                    <option value="" disabled selected>Select Subnet</option>
-                    {% for subnet in subnets %}
-                    <option value="{{ subnet.id }}">{{ subnet.name }} ({{ subnet.cidr }})</option>
-                    {% endfor %}
-                </select>
-                <button type="submit" class="text-red-500 hover:text-red-700 hover:cursor-pointer rounded-full p-3" title="Delete Subnet">
-                    <i class="fas fa-trash fa-lg"></i>
-                </button>
-            </form>
-        </div>
+                
+                {% if subnets %}
+                <div class="overflow-x-auto">
+                    <table class="w-full">
+                        <thead>
+                            <tr class="border-b border-gray-600">
+                                <th class="text-left p-3">Name</th>
+                                <th class="text-left p-3">CIDR</th>
+                                <th class="text-left p-3">Site</th>
+                                <th class="text-left p-3">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for subnet in subnets %}
+                            <tr class="border-b border-gray-600 hover:bg-gray-300 dark:hover:bg-zinc-700">
+                                <td class="p-3 font-medium">{{ subnet.name }}</td>
+                                <td class="p-3 font-mono text-sm">{{ subnet.cidr }}</td>
+                                <td class="p-3">
+                                    <span class="px-2 py-1 bg-blue-200 dark:bg-blue-800 rounded text-sm">{{ subnet.site }}</span>
+                                </td>
+                                <td class="p-3">
+                                    <div class="flex items-center space-x-2">
+                                        <a href="/subnet/{{ subnet.id }}" class="text-blue-500 hover:text-blue-700" title="View Subnet">
+                                            <i class="fas fa-eye"></i>
+                                        </a>
+                                        {% if can_edit_subnet %}
+                                        <button onclick="editSubnet({{ subnet.id }}, '{{ subnet.name|replace("'", "\\'") }}', '{{ subnet.cidr|replace("'", "\\'") }}', '{{ subnet.site|replace("'", "\\'") }}')" class="text-green-500 hover:text-green-700" title="Edit Subnet">
+                                            <i class="fas fa-edit"></i>
+                                        </button>
+                                        {% endif %}
+                                        {% if can_delete_subnet %}
+                                        <form action="/delete_subnet" method="POST" onsubmit="return confirm('Are you sure you want to delete this subnet and all its IPs? This action is irreversible.');" class="inline">
+                                            <input type="hidden" name="subnet_id" value="{{ subnet.id }}">
+                                            <button type="submit" class="text-red-500 hover:text-red-700" title="Delete Subnet">
+                                                <i class="fas fa-trash"></i>
+                                            </button>
+                                        </form>
+                                        {% endif %}
+                                    </div>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <div class="text-center py-8 text-gray-500">
+                    <i class="fas fa-network-wired text-4xl mb-4"></i>
+                    <p>No subnets found. Add your first subnet to get started.</p>
+                </div>
+                {% endif %}
+            </div>
         </div>
     </div>
+    
+    <!-- Add Subnet Modal -->
+    <div id="add-subnet-modal" class="hidden fixed inset-0 bg-black/30 backdrop-blur-md flex items-center justify-center z-50">
+        <div class="bg-gray-200 dark:bg-zinc-800 p-6 rounded-lg shadow-lg max-w-md w-full mx-4">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-xl font-bold">Add New Subnet</h2>
+                <button onclick="closeAddSubnetModal()" class="text-gray-500 hover:text-gray-700">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <form action="/add_subnet" method="POST" onsubmit="return validateSubnetForm();">
+                <div class="space-y-4">
+                    <input type="text" name="name" id="add-subnet-name" placeholder="Subnet Name" class="border p-3 rounded-lg bg-gray-300 text-gray-900 dark:bg-zinc-900 dark:text-gray-100 border-gray-600 w-full" required>
+                    <input type="text" name="cidr" id="add-subnet-cidr" placeholder="CIDR (e.g., 192.168.1.0/24)" class="border p-3 rounded-lg bg-gray-300 text-gray-900 dark:bg-zinc-900 dark:text-gray-100 border-gray-600 w-full" required>
+                    <input type="text" name="site" id="add-subnet-site" placeholder="Site/Location" class="border p-3 rounded-lg bg-gray-300 text-gray-900 dark:bg-zinc-900 dark:text-gray-100 border-gray-600 w-full" required>
+                    <span id="cidr-error" class="text-red-500 text-sm hidden"></span>
+                </div>
+                <div class="flex justify-end space-x-2 mt-6">
+                    <button type="button" onclick="closeAddSubnetModal()" class="px-4 py-2 bg-gray-200 hover:bg-gray-400 dark:bg-zinc-700 dark:hover:bg-zinc-600 hover:cursor-pointer rounded-lg">Cancel</button>
+                    <button type="submit" class="px-4 py-2 bg-gray-200 hover:bg-gray-400 dark:bg-zinc-700 dark:hover:bg-zinc-600 hover:cursor-pointer rounded-lg">Add Subnet</button>
+                </div>
+            </form>
+        </div>
+    </div>
+    
+    <!-- Edit Subnet Modal -->
+    <div id="edit-subnet-modal" class="hidden fixed inset-0 bg-black/30 backdrop-blur-md flex items-center justify-center z-50">
+        <div class="bg-gray-200 dark:bg-zinc-800 p-6 rounded-lg shadow-lg max-w-md w-full mx-4">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-xl font-bold">Edit Subnet</h2>
+                <button onclick="closeEditSubnetModal()" class="text-gray-500 hover:text-gray-700">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <form action="/edit_subnet" method="POST" onsubmit="return validateEditSubnetForm();">
+                <input type="hidden" name="subnet_id" id="edit-subnet-id">
+                <div class="space-y-4">
+                    <input type="text" name="name" id="edit-subnet-name" placeholder="Subnet Name" class="border p-3 rounded-lg bg-gray-300 text-gray-900 dark:bg-zinc-900 dark:text-gray-100 border-gray-600 w-full" required>
+                    <input type="text" name="cidr" id="edit-subnet-cidr" placeholder="CIDR (e.g., 192.168.1.0/24)" class="border p-3 rounded-lg bg-gray-300 text-gray-900 dark:bg-zinc-900 dark:text-gray-100 border-gray-600 w-full" required>
+                    <input type="text" name="site" id="edit-subnet-site" placeholder="Site/Location" class="border p-3 rounded-lg bg-gray-300 text-gray-900 dark:bg-zinc-900 dark:text-gray-100 border-gray-600 w-full" required>
+                    <span id="edit-cidr-error" class="text-red-500 text-sm hidden"></span>
+                </div>
+                <div class="flex justify-end space-x-2 mt-6">
+                    <button type="button" onclick="closeEditSubnetModal()" class="px-4 py-2 bg-gray-200 hover:bg-gray-400 dark:bg-zinc-700 dark:hover:bg-zinc-600 hover:cursor-pointer rounded-lg">Cancel</button>
+                    <button type="submit" class="px-4 py-2 bg-gray-200 hover:bg-gray-400 dark:bg-zinc-700 dark:hover:bg-zinc-600 hover:cursor-pointer rounded-lg">Save Changes</button>
+                </div>
+            </form>
+        </div>
+    </div>
+    
     <script src="/static/js/add_subnet.js"></script>
+    <script>
+        function showAddSubnetModal() {
+            document.getElementById('add-subnet-modal').classList.remove('hidden');
+            document.getElementById('add-subnet-name').value = '';
+            document.getElementById('add-subnet-cidr').value = '';
+            document.getElementById('add-subnet-site').value = '';
+        }
+        
+        function closeAddSubnetModal() {
+            document.getElementById('add-subnet-modal').classList.add('hidden');
+            document.getElementById('cidr-error').classList.add('hidden');
+        }
+        
+        function editSubnet(subnetId, name, cidr, site) {
+            document.getElementById('edit-subnet-id').value = subnetId;
+            document.getElementById('edit-subnet-name').value = name;
+            document.getElementById('edit-subnet-cidr').value = cidr;
+            document.getElementById('edit-subnet-site').value = site;
+            document.getElementById('edit-subnet-modal').classList.remove('hidden');
+        }
+        
+        function closeEditSubnetModal() {
+            document.getElementById('edit-subnet-modal').classList.add('hidden');
+            document.getElementById('edit-cidr-error').classList.add('hidden');
+        }
+        
+        function validateEditSubnetForm() {
+            const cidrInput = document.getElementById('edit-subnet-cidr');
+            const cidrError = document.getElementById('edit-cidr-error');
+            const cidr = cidrInput.value.trim();
+            
+            // Basic CIDR validation
+            const cidrPattern = /^(\d{1,3}\.){3}\d{1,3}\/\d{1,2}$/;
+            if (!cidrPattern.test(cidr)) {
+                cidrError.textContent = 'Invalid CIDR format. Use format like 192.168.1.0/24';
+                cidrError.classList.remove('hidden');
+                return false;
+            }
+            
+            // Check prefix length
+            const parts = cidr.split('/');
+            if (parts.length === 2) {
+                const prefixLen = parseInt(parts[1]);
+                if (prefixLen < 24 || prefixLen > 32) {
+                    cidrError.textContent = 'Subnet must be /24 or smaller (e.g., /24, /25, ... /32)';
+                    cidrError.classList.remove('hidden');
+                    return false;
+                }
+            }
+            
+            cidrError.classList.add('hidden');
+            return true;
+        }
+        
+        // Close modals when clicking outside
+        window.onclick = function(event) {
+            const addModal = document.getElementById('add-subnet-modal');
+            const editModal = document.getElementById('edit-subnet-modal');
+            if (event.target === addModal) {
+                closeAddSubnetModal();
+            }
+            if (event.target === editModal) {
+                closeEditSubnetModal();
+            }
+        }
+    </script>
 </body>
 </html>

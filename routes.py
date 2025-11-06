@@ -1,4 +1,4 @@
-from flask import render_template, request, redirect, url_for, send_from_directory, send_file, session
+from flask import render_template, request, redirect, url_for, send_from_directory, send_file, session, abort
 from db import init_db, hash_password, get_db_connection, verify_password
 from ipaddress import ip_network
 from functools import wraps
@@ -17,6 +17,53 @@ def login_required(f):
             return redirect(url_for('login'))
         return f(*args, **kwargs)
     return decorated_function
+
+def has_permission(permission_name, user_id=None, conn=None):
+    """Check if a user has a specific permission"""
+    if user_id is None:
+        user_id = session.get('user_id')
+    if not user_id:
+        return False
+    
+    close_conn = False
+    if conn is None:
+        from flask import current_app
+        conn = get_db_connection(current_app)
+        close_conn = True
+    
+    try:
+        cursor = conn.cursor()
+        # Get user's role
+        cursor.execute('SELECT role_id FROM User WHERE id = %s', (user_id,))
+        role_result = cursor.fetchone()
+        if not role_result or not role_result[0]:
+            return False
+        
+        role_id = role_result[0]
+        
+        # Check if role has the permission
+        cursor.execute('''
+            SELECT COUNT(*) FROM RolePermission rp
+            JOIN Permission p ON rp.permission_id = p.id
+            WHERE rp.role_id = %s AND p.name = %s
+        ''', (role_id, permission_name))
+        result = cursor.fetchone()
+        return result[0] > 0 if result else False
+    finally:
+        if close_conn:
+            conn.close()
+
+def permission_required(permission_name):
+    """Decorator to require a specific permission"""
+    def decorator(f):
+        @wraps(f)
+        @login_required
+        def decorated_function(*args, **kwargs):
+            if not has_permission(permission_name):
+                abort(403)
+            return f(*args, **kwargs)
+        return decorated_function
+    return decorator
 
 def add_audit_log(user_id, action, details=None, subnet_id=None, conn=None):
     import datetime
@@ -65,7 +112,7 @@ def register_routes(app):
         return redirect(url_for('login'))
 
     @app.route('/')
-    @login_required
+    @permission_required('view_index')
     def index():
         from flask import current_app
         with get_db_connection(current_app) as conn:
@@ -81,7 +128,7 @@ def register_routes(app):
         return render_with_user('index.html', sites_subnets=sites_subnets)
 
     @app.route('/devices')
-    @login_required
+    @permission_required('view_devices')
     def devices():
         from flask import current_app
         with get_db_connection(current_app) as conn:
@@ -105,7 +152,7 @@ def register_routes(app):
         return render_with_user('devices.html', sites_devices=sites_devices, device_ips=device_ips)
 
     @app.route('/add_device', methods=['GET', 'POST'])
-    @login_required
+    @permission_required('add_device')
     def add_device():
         from flask import current_app
         with get_db_connection(current_app) as conn:
@@ -125,7 +172,7 @@ def register_routes(app):
         return render_with_user('add_device.html', device_types=device_types)
 
     @app.route('/device/<int:device_id>')
-    @login_required
+    @permission_required('view_device')
     def device(device_id):
         from flask import current_app
         with get_db_connection(current_app) as conn:
@@ -162,7 +209,7 @@ def register_routes(app):
         return render_with_user('device.html', device={'id': device[0], 'name': device[1], 'description': device[2], 'device_type_id': device[3]}, subnets=subnets, device_ips=device_ips, available_ips_by_subnet=available_ips_by_subnet, device_types=device_types)
 
     @app.route('/update_device_type', methods=['POST'])
-    @login_required
+    @permission_required('edit_device')
     def update_device_type():
         device_id = request.form['device_id']
         device_type_id = request.form['device_type_id']
@@ -176,7 +223,7 @@ def register_routes(app):
         return redirect(url_for('device', device_id=device_id))
 
     @app.route('/device/<int:device_id>/add_ip', methods=['POST'])
-    @login_required
+    @permission_required('add_device_ip')
     def device_add_ip(device_id):
         subnet_id = request.form['subnet_id']
         ip_id = request.form['ip_id']
@@ -234,7 +281,7 @@ def register_routes(app):
         return redirect(url_for('device', device_id=device_id))
 
     @app.route('/device/<int:device_id>/delete_ip', methods=['POST'])
-    @login_required
+    @permission_required('remove_device_ip')
     def device_delete_ip(device_id):
         device_ip_id = request.form['device_ip_id']
         user_name = get_current_user_name()
@@ -260,7 +307,7 @@ def register_routes(app):
         return redirect(url_for('device', device_id=device_id))
 
     @app.route('/delete_device', methods=['POST'])
-    @login_required
+    @permission_required('delete_device')
     def delete_device():
         device_id = request.form['device_id']
         user_name = get_current_user_name()
@@ -283,7 +330,7 @@ def register_routes(app):
         return redirect(url_for('devices'))
 
     @app.route('/subnet/<int:subnet_id>')
-    @login_required
+    @permission_required('view_subnet')
     def subnet(subnet_id):
         from flask import current_app
         with get_db_connection(current_app) as conn:
@@ -308,7 +355,7 @@ def register_routes(app):
         return render_with_user('subnet.html', subnet={'id': subnet[0], 'name': subnet[1], 'cidr': subnet[2]}, ip_addresses=ip_addresses_with_device)
 
     @app.route('/add_subnet', methods=['POST'])
-    @login_required
+    @permission_required('add_subnet')
     def add_subnet():
         name = request.form['name']
         cidr = request.form['cidr']
@@ -332,8 +379,29 @@ def register_routes(app):
         logging.info(f"User {user_name} added subnet '{name}' ({cidr}) at site '{site}'.")
         return redirect(url_for('admin'))
 
+    @app.route('/edit_subnet', methods=['POST'])
+    @permission_required('edit_subnet')
+    def edit_subnet():
+        subnet_id = request.form['subnet_id']
+        name = request.form['name']
+        cidr = request.form['cidr']
+        site = request.form['site']
+        user_name = get_current_user_name()
+        from flask import current_app
+        with get_db_connection(current_app) as conn:
+            cursor = conn.cursor()
+            cursor.execute('SELECT name, cidr FROM Subnet WHERE id = %s', (subnet_id,))
+            old_subnet = cursor.fetchone()
+            if old_subnet:
+                old_name, old_cidr = old_subnet
+                cursor.execute('UPDATE Subnet SET name = %s, cidr = %s, site = %s WHERE id = %s', (name, cidr, site, subnet_id))
+                add_audit_log(session['user_id'], 'edit_subnet', f"Edited subnet from {old_name} ({old_cidr}) to {name} ({cidr}) at site {site}", subnet_id, conn=conn)
+                conn.commit()
+        logging.info(f"User {user_name} edited subnet {subnet_id}.")
+        return redirect(url_for('admin'))
+
     @app.route('/delete_subnet', methods=['POST'])
-    @login_required
+    @permission_required('delete_subnet')
     def delete_subnet():
         subnet_id = request.form['subnet_id']
         user_name = get_current_user_name()
@@ -355,54 +423,175 @@ def register_routes(app):
         return redirect(url_for('admin'))
 
     @app.route('/admin', methods=['GET', 'POST'])
-    @login_required
+    @permission_required('view_admin')
     def admin():
         from flask import current_app
         with get_db_connection(current_app) as conn:
             cursor = conn.cursor()
-            cursor.execute('SELECT id, name, cidr FROM Subnet')
-            subnets = [dict(id=row[0], name=row[1], cidr=row[2]) for row in cursor.fetchall()]
-        return render_with_user('admin.html', subnets=subnets)
+            cursor.execute('SELECT id, name, cidr, site FROM Subnet ORDER BY site, name')
+            subnets = [dict(id=row[0], name=row[1], cidr=row[2], site=row[3] or 'Unassigned') for row in cursor.fetchall()]
+        return render_with_user('admin.html', subnets=subnets, 
+                               can_add_subnet=has_permission('add_subnet'),
+                               can_edit_subnet=has_permission('edit_subnet'),
+                               can_delete_subnet=has_permission('delete_subnet'))
 
     @app.route('/users', methods=['GET', 'POST'])
-    @login_required
+    @permission_required('view_users')
     def users():
         from flask import current_app
         with get_db_connection(current_app) as conn:
             cursor = conn.cursor()
+            error = None
             if request.method == 'POST':
                 action = request.form['action']
                 user_name = get_current_user_name()
-                if action == 'add':
-                    name = request.form['name']
-                    email = request.form['email']
-                    password = hash_password(request.form['password'])
-                    cursor.execute('INSERT INTO User (name, email, password) VALUES (%s, %s, %s)', (name, email, password))
-                    logging.info(f"User {user_name} added user '{name}' ({email}).")
-                elif action == 'edit':
-                    user_id = request.form['user_id']
-                    name = request.form['name']
-                    email = request.form['email']
-                    password = request.form['password']
-                    if password:
-                        password = hash_password(password)
-                        cursor.execute('UPDATE User SET name=%s, email=%s, password=%s WHERE id=%s', (name, email, password, user_id))
+                
+                # User management actions
+                if action == 'add_user':
+                    if not has_permission('manage_users', conn=conn):
+                        error = 'You do not have permission to add users.'
                     else:
-                        cursor.execute('UPDATE User SET name=%s, email=%s WHERE id=%s', (name, email, user_id))
-                    logging.info(f"User {user_name} edited user {user_id}.")
-                elif action == 'delete':
-                    user_id = request.form['user_id']
-                    cursor.execute('UPDATE User SET name=%s WHERE id=%s', ('Deleted User', user_id))
-                    cursor.execute('UPDATE AuditLog SET user_id=NULL WHERE user_id=%s', (user_id,))
-                    cursor.execute('DELETE FROM User WHERE id=%s', (user_id,))
-                    logging.info(f"User {user_name} deleted user {user_id}.")
-                conn.commit()
-            cursor.execute('SELECT id, name, email FROM User')
+                        name = request.form['name']
+                        email = request.form['email']
+                        password = hash_password(request.form['password'])
+                        role_id = request.form.get('role_id')
+                        if role_id:
+                            cursor.execute('INSERT INTO User (name, email, password, role_id) VALUES (%s, %s, %s, %s)', (name, email, password, role_id))
+                        else:
+                            cursor.execute('INSERT INTO User (name, email, password) VALUES (%s, %s, %s)', (name, email, password))
+                        logging.info(f"User {user_name} added user '{name}' ({email}).")
+                        conn.commit()
+                elif action == 'edit_user':
+                    if not has_permission('manage_users', conn=conn):
+                        error = 'You do not have permission to edit users.'
+                    else:
+                        user_id = request.form['user_id']
+                        name = request.form['name']
+                        email = request.form['email']
+                        password = request.form.get('password', '')
+                        role_id = request.form.get('role_id')
+                        if password:
+                            password = hash_password(password)
+                            if role_id:
+                                cursor.execute('UPDATE User SET name=%s, email=%s, password=%s, role_id=%s WHERE id=%s', (name, email, password, role_id, user_id))
+                            else:
+                                cursor.execute('UPDATE User SET name=%s, email=%s, password=%s WHERE id=%s', (name, email, password, user_id))
+                        else:
+                            if role_id:
+                                cursor.execute('UPDATE User SET name=%s, email=%s, role_id=%s WHERE id=%s', (name, email, role_id, user_id))
+                            else:
+                                cursor.execute('UPDATE User SET name=%s, email=%s WHERE id=%s', (name, email, user_id))
+                        logging.info(f"User {user_name} edited user {user_id}.")
+                        conn.commit()
+                elif action == 'delete_user':
+                    if not has_permission('manage_users', conn=conn):
+                        error = 'You do not have permission to delete users.'
+                    else:
+                        user_id = request.form['user_id']
+                        cursor.execute('UPDATE User SET name=%s WHERE id=%s', ('Deleted User', user_id))
+                        cursor.execute('UPDATE AuditLog SET user_id=NULL WHERE user_id=%s', (user_id,))
+                        cursor.execute('DELETE FROM User WHERE id=%s', (user_id,))
+                        logging.info(f"User {user_name} deleted user {user_id}.")
+                        conn.commit()
+                
+                # Role management actions
+                elif action == 'add_role':
+                    if not has_permission('manage_roles', conn=conn):
+                        error = 'You do not have permission to add roles.'
+                    else:
+                        role_name = request.form['role_name'].strip()
+                        role_description = request.form.get('role_description', '').strip()
+                        if not role_name:
+                            error = 'Role name is required.'
+                        else:
+                            try:
+                                cursor.execute('INSERT INTO Role (name, description) VALUES (%s, %s)', (role_name, role_description))
+                                role_id = cursor.lastrowid
+                                # Get selected permissions
+                                permission_ids = request.form.getlist('permissions')
+                                for perm_id in permission_ids:
+                                    cursor.execute('INSERT INTO RolePermission (role_id, permission_id) VALUES (%s, %s)', (role_id, perm_id))
+                                conn.commit()
+                                logging.info(f"User {user_name} added role '{role_name}'.")
+                            except mysql.connector.IntegrityError as e:
+                                if e.errno == 1062:  # Duplicate entry
+                                    error = f"Role '{role_name}' already exists."
+                                else:
+                                    raise
+                elif action == 'edit_role':
+                    if not has_permission('manage_roles', conn=conn):
+                        error = 'You do not have permission to edit roles.'
+                    else:
+                        role_id = request.form['role_id']
+                        role_name = request.form['role_name'].strip()
+                        role_description = request.form.get('role_description', '').strip()
+                        if not role_name:
+                            error = 'Role name is required.'
+                        else:
+                            try:
+                                cursor.execute('UPDATE Role SET name=%s, description=%s WHERE id=%s', (role_name, role_description, role_id))
+                                # Update permissions
+                                cursor.execute('DELETE FROM RolePermission WHERE role_id=%s', (role_id,))
+                                permission_ids = request.form.getlist('permissions')
+                                for perm_id in permission_ids:
+                                    cursor.execute('INSERT INTO RolePermission (role_id, permission_id) VALUES (%s, %s)', (role_id, perm_id))
+                                conn.commit()
+                                logging.info(f"User {user_name} edited role {role_id}.")
+                            except mysql.connector.IntegrityError as e:
+                                if e.errno == 1062:  # Duplicate entry
+                                    error = f"Role '{role_name}' already exists."
+                                else:
+                                    raise
+                elif action == 'delete_role':
+                    if not has_permission('manage_roles', conn=conn):
+                        error = 'You do not have permission to delete roles.'
+                    else:
+                        role_id = request.form['role_id']
+                        # Check if any users are using this role
+                        cursor.execute('SELECT COUNT(*) FROM User WHERE role_id = %s', (role_id,))
+                        user_count = cursor.fetchone()[0]
+                        if user_count > 0:
+                            cursor.execute('SELECT name FROM Role WHERE id = %s', (role_id,))
+                            role_name = cursor.fetchone()[0]
+                            error = f"Cannot delete role '{role_name}' because {user_count} user(s) are using it."
+                        else:
+                            cursor.execute('SELECT name FROM Role WHERE id = %s', (role_id,))
+                            role_name = cursor.fetchone()[0]
+                            cursor.execute('DELETE FROM Role WHERE id = %s', (role_id,))
+                            conn.commit()
+                            logging.info(f"User {user_name} deleted role '{role_name}'.")
+            
+            # Get users with their roles
+            cursor.execute('''
+                SELECT u.id, u.name, u.email, r.id as role_id, r.name as role_name
+                FROM User u
+                LEFT JOIN Role r ON u.role_id = r.id
+                ORDER BY u.name
+            ''')
             users = cursor.fetchall()
-        return render_with_user('users.html', users=users)
+            
+            # Get all roles
+            cursor.execute('SELECT id, name, description FROM Role ORDER BY name')
+            roles = cursor.fetchall()
+            
+            # Get all permissions grouped by category
+            cursor.execute('SELECT id, name, description, category FROM Permission ORDER BY category, name')
+            permissions = cursor.fetchall()
+            
+            # Get permissions for each role
+            role_permissions = {}
+            for role in roles:
+                role_id = role[0]
+                cursor.execute('''
+                    SELECT permission_id FROM RolePermission WHERE role_id = %s
+                ''', (role_id,))
+                role_permissions[role_id] = [row[0] for row in cursor.fetchall()]
+        
+        return render_with_user('users.html', users=users, roles=roles, permissions=permissions, role_permissions=role_permissions, error=error, 
+                               can_manage_users=has_permission('manage_users'), can_manage_roles=has_permission('manage_roles'))
 
     @app.route('/audit')
-    @login_required
+    @permission_required('view_audit')
     def audit():
         PER_PAGE = 25
         page = int(request.args.get('page', 1))
@@ -446,7 +635,7 @@ def register_routes(app):
         return render_with_user('audit.html', logs=logs, users=users, subnets=subnets, actions=actions, devices=devices, page=page, total_pages=total_pages, query_args=query_args)
 
     @app.route('/get_available_ips')
-    @login_required
+    @permission_required('view_device')
     def get_available_ips():
         subnet_id = request.args.get('subnet_id')
         from flask import current_app
@@ -457,7 +646,7 @@ def register_routes(app):
         return {'available_ips': available_ips}
 
     @app.route('/rename_device', methods=['POST'])
-    @login_required
+    @permission_required('edit_device')
     def rename_device():
         device_id = request.form['device_id']
         new_name = request.form['new_name']
@@ -475,7 +664,7 @@ def register_routes(app):
         return redirect(url_for('device', device_id=device_id))
 
     @app.route('/update_device_description', methods=['POST'])
-    @login_required
+    @permission_required('edit_device')
     def update_device_description():
         device_id = request.form['device_id']
         description = request.form['description']
@@ -489,7 +678,7 @@ def register_routes(app):
         return redirect(url_for('device', device_id=device_id))
 
     @app.route('/subnet/<int:subnet_id>/export_csv')
-    @login_required
+    @permission_required('export_subnet_csv')
     def export_subnet_csv(subnet_id):
         from flask import current_app
         with get_db_connection(current_app) as conn:
@@ -533,7 +722,7 @@ def register_routes(app):
         )
 
     @app.route('/subnet/<int:subnet_id>/dhcp', methods=['GET', 'POST'])
-    @login_required
+    @permission_required('view_dhcp')
     def dhcp_pool(subnet_id):
         error = None
         from flask import current_app
@@ -547,47 +736,50 @@ def register_routes(app):
             if row:
                 dhcp_pool = {'start_ip': row[0], 'end_ip': row[1], 'excluded_ips': row[2] if len(row) > 2 else ''}
             if request.method == 'POST':
-                user_name = get_current_user_name()
-                if 'remove' in request.form:
-                    cursor.execute('DELETE FROM DHCPPool WHERE subnet_id = %s', (subnet_id,))
-                    cursor.execute('UPDATE IPAddress SET hostname=NULL WHERE subnet_id=%s AND hostname="DHCP"', (subnet_id,))
-                    conn.commit()
-                    dhcp_pool = None
-                    add_audit_log(session['user_id'], 'dhcp_pool_remove', f"Removed DHCP pool for subnet {subnet[1]} ({subnet[2]})", subnet_id, conn=conn)
+                if not has_permission('configure_dhcp', conn=conn):
+                    error = 'You do not have permission to configure DHCP pools.'
                 else:
-                    start_ip = request.form['start_ip']
-                    end_ip = request.form['end_ip']
-                    excluded_ips = request.form.get('excluded_ips', '').replace(' ', '')
-                    excluded_list = [ip for ip in excluded_ips.split(',') if ip]
-                    cursor.execute('SELECT ip FROM IPAddress WHERE subnet_id = %s', (subnet_id,))
-                    all_ips = [row[0] for row in cursor.fetchall()]
-                    if start_ip not in all_ips or end_ip not in all_ips:
-                        error = 'Start and End IP must be within the subnet.'
-                    else:
+                    user_name = get_current_user_name()
+                    if 'remove' in request.form:
+                        cursor.execute('DELETE FROM DHCPPool WHERE subnet_id = %s', (subnet_id,))
                         cursor.execute('UPDATE IPAddress SET hostname=NULL WHERE subnet_id=%s AND hostname="DHCP"', (subnet_id,))
-                        if dhcp_pool:
-                            cursor.execute('''UPDATE DHCPPool SET start_ip = %s, end_ip = %s, excluded_ips = %s WHERE subnet_id = %s''', (start_ip, end_ip, excluded_ips, subnet_id))
-                            action = 'dhcp_pool_update'
-                            details = f"Updated DHCP pool for subnet {subnet[1]} ({subnet[2]}): {start_ip} - {end_ip}, excluded: {excluded_ips}"
-                        else:
-                            cursor.execute('''INSERT INTO DHCPPool (subnet_id, start_ip, end_ip, excluded_ips) VALUES (%s, %s, %s, %s)''', (subnet_id, start_ip, end_ip, excluded_ips))
-                            action = 'dhcp_pool_create'
-                            details = f"Created DHCP pool for subnet {subnet[1]} ({subnet[2]}): {start_ip} - {end_ip}, excluded: {excluded_ips}"
-                        in_range = False
-                        for ip in all_ips:
-                            if ip == start_ip:
-                                in_range = True
-                            if in_range and ip not in excluded_list:
-                                cursor.execute('UPDATE IPAddress SET hostname="DHCP" WHERE subnet_id=%s AND ip=%s', (subnet_id, ip))
-                            if ip == end_ip:
-                                break
                         conn.commit()
-                        dhcp_pool = {'start_ip': start_ip, 'end_ip': end_ip, 'excluded_ips': excluded_ips}
-                        add_audit_log(session['user_id'], action, details, subnet_id, conn=conn)
+                        dhcp_pool = None
+                        add_audit_log(session['user_id'], 'dhcp_pool_remove', f"Removed DHCP pool for subnet {subnet[1]} ({subnet[2]})", subnet_id, conn=conn)
+                    else:
+                        start_ip = request.form['start_ip']
+                        end_ip = request.form['end_ip']
+                        excluded_ips = request.form.get('excluded_ips', '').replace(' ', '')
+                        excluded_list = [ip for ip in excluded_ips.split(',') if ip]
+                        cursor.execute('SELECT ip FROM IPAddress WHERE subnet_id = %s', (subnet_id,))
+                        all_ips = [row[0] for row in cursor.fetchall()]
+                        if start_ip not in all_ips or end_ip not in all_ips:
+                            error = 'Start and End IP must be within the subnet.'
+                        else:
+                            cursor.execute('UPDATE IPAddress SET hostname=NULL WHERE subnet_id=%s AND hostname="DHCP"', (subnet_id,))
+                            if dhcp_pool:
+                                cursor.execute('''UPDATE DHCPPool SET start_ip = %s, end_ip = %s, excluded_ips = %s WHERE subnet_id = %s''', (start_ip, end_ip, excluded_ips, subnet_id))
+                                action = 'dhcp_pool_update'
+                                details = f"Updated DHCP pool for subnet {subnet[1]} ({subnet[2]}): {start_ip} - {end_ip}, excluded: {excluded_ips}"
+                            else:
+                                cursor.execute('''INSERT INTO DHCPPool (subnet_id, start_ip, end_ip, excluded_ips) VALUES (%s, %s, %s, %s)''', (subnet_id, start_ip, end_ip, excluded_ips))
+                                action = 'dhcp_pool_create'
+                                details = f"Created DHCP pool for subnet {subnet[1]} ({subnet[2]}): {start_ip} - {end_ip}, excluded: {excluded_ips}"
+                            in_range = False
+                            for ip in all_ips:
+                                if ip == start_ip:
+                                    in_range = True
+                                if in_range and ip not in excluded_list:
+                                    cursor.execute('UPDATE IPAddress SET hostname="DHCP" WHERE subnet_id=%s AND ip=%s', (subnet_id, ip))
+                                if ip == end_ip:
+                                    break
+                            conn.commit()
+                            dhcp_pool = {'start_ip': start_ip, 'end_ip': end_ip, 'excluded_ips': excluded_ips}
+                            add_audit_log(session['user_id'], action, details, subnet_id, conn=conn)
             return render_with_user('dhcp.html', subnet={'id': subnet[0], 'name': subnet[1]}, dhcp_pool=dhcp_pool, error=error)
 
     @app.route('/device_type_stats')
-    @login_required
+    @permission_required('view_device_type_stats')
     def device_type_stats():
         from flask import current_app
         with get_db_connection(current_app) as conn:
@@ -603,7 +795,7 @@ def register_routes(app):
         return render_with_user('device_type_stats.html', stats=stats)
 
     @app.route('/device_types', methods=['GET', 'POST'])
-    @login_required
+    @permission_required('view_device_types')
     def device_types():
         from flask import current_app
         error = None
@@ -613,61 +805,70 @@ def register_routes(app):
                 action = request.form['action']
                 user_name = get_current_user_name()
                 if action == 'add':
-                    name = request.form['name'].strip()
-                    icon_class = request.form['icon_class'].strip()
-                    if not name:
-                        error = 'Device type name is required.'
-                    elif not icon_class:
-                        error = 'Icon class is required.'
+                    if not has_permission('add_device_type', conn=conn):
+                        error = 'You do not have permission to add device types.'
                     else:
-                        try:
-                            cursor.execute('INSERT INTO DeviceType (name, icon_class) VALUES (%s, %s)', (name, icon_class))
-                            conn.commit()
-                            logging.info(f"User {user_name} added device type '{name}' with icon '{icon_class}'.")
-                        except mysql.connector.IntegrityError as e:
-                            if e.errno == 1062:  # Duplicate entry
-                                error = f"Device type '{name}' already exists."
-                            else:
-                                raise
+                        name = request.form['name'].strip()
+                        icon_class = request.form['icon_class'].strip()
+                        if not name:
+                            error = 'Device type name is required.'
+                        elif not icon_class:
+                            error = 'Icon class is required.'
+                        else:
+                            try:
+                                cursor.execute('INSERT INTO DeviceType (name, icon_class) VALUES (%s, %s)', (name, icon_class))
+                                conn.commit()
+                                logging.info(f"User {user_name} added device type '{name}' with icon '{icon_class}'.")
+                            except mysql.connector.IntegrityError as e:
+                                if e.errno == 1062:  # Duplicate entry
+                                    error = f"Device type '{name}' already exists."
+                                else:
+                                    raise
                 elif action == 'edit':
-                    device_type_id = request.form['device_type_id']
-                    name = request.form['name'].strip()
-                    icon_class = request.form['icon_class'].strip()
-                    if not name:
-                        error = 'Device type name is required.'
-                    elif not icon_class:
-                        error = 'Icon class is required.'
+                    if not has_permission('edit_device_type', conn=conn):
+                        error = 'You do not have permission to edit device types.'
                     else:
-                        try:
-                            cursor.execute('UPDATE DeviceType SET name = %s, icon_class = %s WHERE id = %s', (name, icon_class, device_type_id))
-                            conn.commit()
-                            logging.info(f"User {user_name} edited device type {device_type_id} to '{name}' with icon '{icon_class}'.")
-                        except mysql.connector.IntegrityError as e:
-                            if e.errno == 1062:  # Duplicate entry
-                                error = f"Device type '{name}' already exists."
-                            else:
-                                raise
+                        device_type_id = request.form['device_type_id']
+                        name = request.form['name'].strip()
+                        icon_class = request.form['icon_class'].strip()
+                        if not name:
+                            error = 'Device type name is required.'
+                        elif not icon_class:
+                            error = 'Icon class is required.'
+                        else:
+                            try:
+                                cursor.execute('UPDATE DeviceType SET name = %s, icon_class = %s WHERE id = %s', (name, icon_class, device_type_id))
+                                conn.commit()
+                                logging.info(f"User {user_name} edited device type {device_type_id} to '{name}' with icon '{icon_class}'.")
+                            except mysql.connector.IntegrityError as e:
+                                if e.errno == 1062:  # Duplicate entry
+                                    error = f"Device type '{name}' already exists."
+                                else:
+                                    raise
                 elif action == 'delete':
-                    device_type_id = request.form['device_type_id']
-                    # Check if any devices are using this device type
-                    cursor.execute('SELECT COUNT(*) FROM Device WHERE device_type_id = %s', (device_type_id,))
-                    device_count = cursor.fetchone()[0]
-                    if device_count > 0:
-                        cursor.execute('SELECT name FROM DeviceType WHERE id = %s', (device_type_id,))
-                        device_type_name = cursor.fetchone()[0]
-                        error = f"Cannot delete device type '{device_type_name}' because {device_count} device(s) are using it."
+                    if not has_permission('delete_device_type', conn=conn):
+                        error = 'You do not have permission to delete device types.'
                     else:
-                        cursor.execute('SELECT name FROM DeviceType WHERE id = %s', (device_type_id,))
-                        device_type_name = cursor.fetchone()[0]
-                        cursor.execute('DELETE FROM DeviceType WHERE id = %s', (device_type_id,))
-                        conn.commit()
-                        logging.info(f"User {user_name} deleted device type '{device_type_name}'.")
+                        device_type_id = request.form['device_type_id']
+                        # Check if any devices are using this device type
+                        cursor.execute('SELECT COUNT(*) FROM Device WHERE device_type_id = %s', (device_type_id,))
+                        device_count = cursor.fetchone()[0]
+                        if device_count > 0:
+                            cursor.execute('SELECT name FROM DeviceType WHERE id = %s', (device_type_id,))
+                            device_type_name = cursor.fetchone()[0]
+                            error = f"Cannot delete device type '{device_type_name}' because {device_count} device(s) are using it."
+                        else:
+                            cursor.execute('SELECT name FROM DeviceType WHERE id = %s', (device_type_id,))
+                            device_type_name = cursor.fetchone()[0]
+                            cursor.execute('DELETE FROM DeviceType WHERE id = %s', (device_type_id,))
+                            conn.commit()
+                            logging.info(f"User {user_name} deleted device type '{device_type_name}'.")
             cursor.execute('SELECT id, name, icon_class FROM DeviceType ORDER BY name')
             device_types = cursor.fetchall()
         return render_with_user('device_types.html', device_types=device_types, error=error)
 
     @app.route('/devices/type/<device_type>')
-    @login_required
+    @permission_required('view_devices_by_type')
     def devices_by_type(device_type):
         from flask import current_app
         with get_db_connection(current_app) as conn:
@@ -699,7 +900,7 @@ def register_routes(app):
         return render_with_user('devices_by_type.html', device_type=device_type, icon_class=icon_class, site_devices=site_devices)
 
     @app.route('/racks')
-    @login_required
+    @permission_required('view_racks')
     def racks():
         from flask import current_app
         with get_db_connection(current_app) as conn:
@@ -719,7 +920,7 @@ def register_routes(app):
         return render_with_user('racks.html', racks=racks)
 
     @app.route('/rack/add', methods=['GET', 'POST'])
-    @login_required
+    @permission_required('add_rack')
     def add_rack():
         from flask import current_app
         if request.method == 'POST':
@@ -738,7 +939,7 @@ def register_routes(app):
         return render_with_user('add_rack.html')
 
     @app.route('/rack/<int:rack_id>')
-    @login_required
+    @permission_required('view_rack')
     def rack(rack_id):
         from flask import current_app, request
         side = request.args.get('side', 'front')
@@ -775,7 +976,7 @@ def register_routes(app):
         return render_with_user('rack.html', rack=rack, rack_devices=rack_devices, site_devices=site_devices, current_side=side)
 
     @app.route('/rack/<int:rack_id>/add_device', methods=['POST'])
-    @login_required
+    @permission_required('add_device_to_rack')
     def rack_add_device(rack_id):
         device_id = int(request.form['device_id'])
         position_u = int(request.form['position_u'])
@@ -835,7 +1036,7 @@ def register_routes(app):
         return redirect(url_for('rack', rack_id=rack_id))
 
     @app.route('/rack/<int:rack_id>/add_nonnet_device', methods=['POST'])
-    @login_required
+    @permission_required('add_nonnet_device_to_rack')
     def rack_add_nonnet_device(rack_id):
         device_name = request.form['device_name']
         position_u = int(request.form['position_u'])
@@ -894,7 +1095,7 @@ def register_routes(app):
         return redirect(url_for('rack', rack_id=rack_id))
 
     @app.route('/rack/<int:rack_id>/remove_device', methods=['POST'])
-    @login_required
+    @permission_required('remove_device_from_rack')
     def rack_remove_device(rack_id):
         rack_device_id = int(request.form['rack_device_id'])
         user_name = get_current_user_name()
@@ -919,7 +1120,7 @@ def register_routes(app):
         return redirect(url_for('rack', rack_id=rack_id))
 
     @app.route('/rack/<int:rack_id>/delete', methods=['POST'])
-    @login_required
+    @permission_required('delete_rack')
     def delete_rack(rack_id):
         user_name = get_current_user_name()
         from flask import current_app
@@ -934,7 +1135,7 @@ def register_routes(app):
         return redirect(url_for('racks'))
 
     @app.route('/rack/<int:rack_id>/export_csv')
-    @login_required
+    @permission_required('export_rack_csv')
     def export_rack_csv(rack_id):
         from flask import current_app
         with get_db_connection(current_app) as conn:
@@ -983,7 +1184,7 @@ def register_routes(app):
             )
 
     @app.route('/help')
-    @login_required
+    @permission_required('view_help')
     def help():
         return render_with_user('help.html')
 
@@ -1014,6 +1215,7 @@ def register_routes(app):
     app.add_url_rule('/delete_device', 'delete_device', delete_device, methods=['POST'])
     app.add_url_rule('/subnet/<int:subnet_id>', 'subnet', subnet)
     app.add_url_rule('/add_subnet', 'add_subnet', add_subnet, methods=['POST'])
+    app.add_url_rule('/edit_subnet', 'edit_subnet', edit_subnet, methods=['POST'])
     app.add_url_rule('/delete_subnet', 'delete_subnet', delete_subnet, methods=['POST'])
     app.add_url_rule('/admin', 'admin', admin, methods=['GET', 'POST'])
     app.add_url_rule('/users', 'users', users, methods=['GET', 'POST'])
