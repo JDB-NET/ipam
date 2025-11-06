@@ -61,9 +61,9 @@
                                 <tr class="border-b border-gray-600">
                                     <th class="text-left p-2">Name</th>
                                     <th class="text-left p-2">Email</th>
-                                    <th class="text-left p-2">Role</th>
+                                    <th class="text-center p-2">Role</th>
                                     {% if can_manage_users %}
-                                    <th class="text-left p-2">Actions</th>
+                                    <th class="text-center p-2">Actions</th>
                                     {% endif %}
                                 </tr>
                             </thead>
@@ -72,14 +72,21 @@
                                 <tr class="border-b border-gray-600">
                                     <td class="p-2">{{ user[1] }}</td>
                                     <td class="p-2">{{ user[2] }}</td>
-                                    <td class="p-2">
-                                        <span class="px-2 py-1 bg-blue-200 dark:bg-blue-800 rounded">{{ user[4] or 'No Role' }}</span>
+                                    <td class="p-2 text-center">
+                                        <span class="px-2 py-1 bg-gray-300 dark:bg-zinc-700 rounded">{{ user[4] or 'No Role' }}</span>
                                     </td>
                                     {% if can_manage_users %}
-                                    <td class="p-2">
-                                        <button onclick="editUser({{ user[0] }}, '{{ user[1]|replace("'", "\\'") }}', '{{ user[2]|replace("'", "\\'") }}', {{ user[3] if user[3] else 'null' }})" class="text-blue-500 hover:text-blue-700 mr-4 hover:cursor-pointer" title="Edit User">
+                                    <td class="p-2 text-center">
+                                        <button onclick="editUser({{ user[0] }}, '{{ user[1]|replace("'", "\\'") }}', '{{ user[2]|replace("'", "\\'") }}', {{ user[3] if user[3] else 'null' }}, '{{ user[5]|replace("'", "\\'") if user[5] else '' }}')" class="text-blue-500 hover:text-blue-700 mr-2 hover:cursor-pointer" title="Edit User">
                                             <i class="fas fa-edit"></i>
                                         </button>
+                                        <form action="/users" method="POST" onsubmit="return confirm('Are you sure you want to regenerate the API key for this user?');" class="inline mr-2">
+                                            <input type="hidden" name="action" value="regenerate_api_key">
+                                            <input type="hidden" name="user_id" value="{{ user[0] }}">
+                                            <button type="submit" class="text-yellow-500 hover:text-yellow-700 hover:cursor-pointer" title="Regenerate API Key">
+                                                <i class="fas fa-key"></i>
+                                            </button>
+                                        </form>
                                         <form action="/users" method="POST" onsubmit="return confirm('Are you sure you want to delete this user?');" class="inline">
                                             <input type="hidden" name="action" value="delete_user">
                                             <input type="hidden" name="user_id" value="{{ user[0] }}">
@@ -176,6 +183,11 @@
                     <option value="{{ role[0] }}">{{ role[1] }}</option>
                     {% endfor %}
                 </select>
+                <div class="border p-3 rounded-lg bg-gray-300 dark:bg-zinc-900 border-gray-600 w-full">
+                    <label class="text-sm font-semibold mb-2 block">API Key</label>
+                    <code id="edit-user-api-key" class="text-xs font-mono break-all block bg-gray-200 dark:bg-zinc-800 px-2 py-1 rounded"></code>
+                    <p class="text-xs text-gray-600 dark:text-gray-400 mt-2">Use this API key to authenticate API requests. Keep it secure!</p>
+                </div>
                 <div class="flex justify-end space-x-2">
                     <button type="button" onclick="closeEditUserModal()" class="px-4 py-2 bg-gray-200 hover:bg-gray-400 dark:bg-zinc-700 dark:hover:bg-zinc-600 hover:cursor-pointer rounded-lg">Cancel</button>
                     <button type="submit" class="px-4 py-2 bg-gray-200 hover:bg-gray-400 dark:bg-zinc-700 dark:hover:bg-zinc-600 hover:cursor-pointer rounded-lg">Save</button>
@@ -347,12 +359,13 @@
             }
         }
         
-        function editUser(userId, name, email, roleId) {
+        function editUser(userId, name, email, roleId, apiKey) {
             document.getElementById('edit-user-id').value = userId;
             document.getElementById('edit-user-name').value = name;
             document.getElementById('edit-user-email').value = email;
             document.getElementById('edit-user-password').value = '';
             document.getElementById('edit-user-role').value = (roleId === null || roleId === 'null') ? '' : roleId;
+            document.getElementById('edit-user-api-key').textContent = apiKey || 'No API Key';
             document.getElementById('edit-user-modal').classList.remove('hidden');
         }
         

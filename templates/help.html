@@ -80,6 +80,86 @@
                             <h3 class="text-xl font-semibold mb-1">Audit & History</h3>
                             <p>All changes are logged and can be reviewed on the <a href="/audit" class="text-blue-600 dark:text-blue-400 hover:underline">Audit</a> page for accountability and troubleshooting. The audit log shows who made changes, what was changed, and when.</p>
                         </div>
+                        <div>
+                            <h3 class="text-xl font-semibold mb-1">API Keys</h3>
+                            <p>Each user has a unique API key that can be used to authenticate API requests. API keys can be viewed and regenerated from the <a href="/users" class="text-blue-600 dark:text-blue-400 hover:underline">Users</a> page. Keep your API key secure and never share it publicly.</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="bg-gray-200 dark:bg-zinc-800 rounded-2xl shadow-lg p-8">
+                    <h2 class="text-2xl font-semibold mb-4 border-b border-gray-700 pb-2">API Documentation</h2>
+                    <div class="space-y-4">
+                        <div>
+                            <h3 class="text-xl font-semibold mb-1">Authentication</h3>
+                            <p>All API requests require authentication using an API key. You can provide the API key in one of three ways:</p>
+                            <ul class="list-disc list-inside mt-2 space-y-1 ml-4">
+                                <li><strong>Header:</strong> <code class="bg-gray-300 dark:bg-zinc-700 px-2 py-1 rounded text-sm">X-API-Key: your_api_key</code></li>
+                                <li><strong>Authorization Header:</strong> <code class="bg-gray-300 dark:bg-zinc-700 px-2 py-1 rounded text-sm">Authorization: Bearer your_api_key</code></li>
+                                <li><strong>Query Parameter:</strong> <code class="bg-gray-300 dark:bg-zinc-700 px-2 py-1 rounded text-sm">?api_key=your_api_key</code></li>
+                            </ul>
+                        </div>
+                        <div>
+                            <h3 class="text-xl font-semibold mb-1">Base URL</h3>
+                            <p>All API endpoints are prefixed with <code class="bg-gray-300 dark:bg-zinc-700 px-2 py-1 rounded text-sm">/api/v1</code></p>
+                        </div>
+                        <div>
+                            <h3 class="text-xl font-semibold mb-1">Available Endpoints</h3>
+                            <div class="space-y-3 mt-2">
+                                <div>
+                                    <h4 class="font-semibold">Devices</h4>
+                                    <ul class="list-disc list-inside ml-4 text-sm space-y-1">
+                                        <li><code class="bg-gray-300 dark:bg-zinc-700 px-1 rounded">GET /api/v1/devices</code> - List all devices</li>
+                                        <li><code class="bg-gray-300 dark:bg-zinc-700 px-1 rounded">GET /api/v1/devices/{id}</code> - Get device details</li>
+                                        <li><code class="bg-gray-300 dark:bg-zinc-700 px-1 rounded">POST /api/v1/devices</code> - Create device</li>
+                                        <li><code class="bg-gray-300 dark:bg-zinc-700 px-1 rounded">PUT /api/v1/devices/{id}</code> - Update device</li>
+                                        <li><code class="bg-gray-300 dark:bg-zinc-700 px-1 rounded">DELETE /api/v1/devices/{id}</code> - Delete device</li>
+                                        <li><code class="bg-gray-300 dark:bg-zinc-700 px-1 rounded">POST /api/v1/devices/{id}/ips</code> - Add IP to device</li>
+                                        <li><code class="bg-gray-300 dark:bg-zinc-700 px-1 rounded">DELETE /api/v1/devices/{id}/ips/{ip_id}</code> - Remove IP from device</li>
+                                    </ul>
+                                </div>
+                                <div>
+                                    <h4 class="font-semibold">Subnets</h4>
+                                    <ul class="list-disc list-inside ml-4 text-sm space-y-1">
+                                        <li><code class="bg-gray-300 dark:bg-zinc-700 px-1 rounded">GET /api/v1/subnets</code> - List all subnets</li>
+                                        <li><code class="bg-gray-300 dark:bg-zinc-700 px-1 rounded">GET /api/v1/subnets/{id}</code> - Get subnet details</li>
+                                        <li><code class="bg-gray-300 dark:bg-zinc-700 px-1 rounded">POST /api/v1/subnets</code> - Create subnet</li>
+                                        <li><code class="bg-gray-300 dark:bg-zinc-700 px-1 rounded">PUT /api/v1/subnets/{id}</code> - Update subnet</li>
+                                        <li><code class="bg-gray-300 dark:bg-zinc-700 px-1 rounded">DELETE /api/v1/subnets/{id}</code> - Delete subnet</li>
+                                    </ul>
+                                </div>
+                                <div>
+                                    <h4 class="font-semibold">Racks</h4>
+                                    <ul class="list-disc list-inside ml-4 text-sm space-y-1">
+                                        <li><code class="bg-gray-300 dark:bg-zinc-700 px-1 rounded">GET /api/v1/racks</code> - List all racks</li>
+                                        <li><code class="bg-gray-300 dark:bg-zinc-700 px-1 rounded">GET /api/v1/racks/{id}</code> - Get rack details</li>
+                                        <li><code class="bg-gray-300 dark:bg-zinc-700 px-1 rounded">POST /api/v1/racks</code> - Create rack</li>
+                                        <li><code class="bg-gray-300 dark:bg-zinc-700 px-1 rounded">DELETE /api/v1/racks/{id}</code> - Delete rack</li>
+                                        <li><code class="bg-gray-300 dark:bg-zinc-700 px-1 rounded">POST /api/v1/racks/{id}/devices</code> - Add device to rack</li>
+                                        <li><code class="bg-gray-300 dark:bg-zinc-700 px-1 rounded">DELETE /api/v1/racks/{id}/devices/{rack_device_id}</code> - Remove device from rack</li>
+                                    </ul>
+                                </div>
+                                <div>
+                                    <h4 class="font-semibold">Other</h4>
+                                    <ul class="list-disc list-inside ml-4 text-sm space-y-1">
+                                        <li><code class="bg-gray-300 dark:bg-zinc-700 px-1 rounded">GET /api/v1/info</code> - Get API info and user details</li>
+                                        <li><code class="bg-gray-300 dark:bg-zinc-700 px-1 rounded">GET /api/v1/device-types</code> - List device types</li>
+                                        <li><code class="bg-gray-300 dark:bg-zinc-700 px-1 rounded">GET /api/v1/subnets/{id}/dhcp</code> - Get DHCP pools</li>
+                                        <li><code class="bg-gray-300 dark:bg-zinc-700 px-1 rounded">POST /api/v1/subnets/{id}/dhcp</code> - Configure DHCP pools</li>
+                                        <li><code class="bg-gray-300 dark:bg-zinc-700 px-1 rounded">GET /api/v1/audit</code> - Get audit log</li>
+                                        <li><code class="bg-gray-300 dark:bg-zinc-700 px-1 rounded">GET /api/v1/users</code> - List users (admin only)</li>
+                                        <li><code class="bg-gray-300 dark:bg-zinc-700 px-1 rounded">GET /api/v1/roles</code> - List roles (admin only)</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+                        <div>
+                            <h3 class="text-xl font-semibold mb-1">Permissions</h3>
+                            <p>API endpoints respect the same role-based permissions as the web interface. Users can only perform actions that their role allows. If a user lacks the required permission, the API will return a <code class="bg-gray-300 dark:bg-zinc-700 px-2 py-1 rounded text-sm">403 Forbidden</code> error.</p>
+                        </div>
+                        <div>
+                            <h3 class="text-xl font-semibold mb-1">Response Format</h3>
+                            <p>All API responses are in JSON format. Successful requests return <code class="bg-gray-300 dark:bg-zinc-700 px-2 py-1 rounded text-sm">200 OK</code> or <code class="bg-gray-300 dark:bg-zinc-700 px-2 py-1 rounded text-sm">201 Created</code> with the requested data. Errors return appropriate HTTP status codes with an error message in the response body.</p>
+                        </div>
                     </div>
                 </div>
             </div>

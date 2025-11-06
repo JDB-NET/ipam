@@ -1,5 +1,5 @@
-from flask import render_template, request, redirect, url_for, send_from_directory, send_file, session, abort
-from db import init_db, hash_password, get_db_connection, verify_password
+from flask import render_template, request, redirect, url_for, send_from_directory, send_file, session, abort, jsonify
+from db import init_db, hash_password, get_db_connection, verify_password, generate_api_key
 from ipaddress import ip_network
 from functools import wraps
 import os
@@ -61,6 +61,63 @@ def permission_required(permission_name):
         def decorated_function(*args, **kwargs):
             if not has_permission(permission_name):
                 abort(403)
+            return f(*args, **kwargs)
+        return decorated_function
+    return decorator
+
+def get_user_from_api_key(api_key):
+    """Get user from API key"""
+    from flask import current_app
+    with get_db_connection(current_app) as conn:
+        cursor = conn.cursor()
+        cursor.execute('SELECT id, name, email, role_id FROM User WHERE api_key = %s', (api_key,))
+        result = cursor.fetchone()
+        if result:
+            return {
+                'id': result[0],
+                'name': result[1],
+                'email': result[2],
+                'role_id': result[3]
+            }
+    return None
+
+def api_auth_required(f):
+    """Decorator for API authentication using API key"""
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        api_key = None
+        # Check for API key in header
+        if 'X-API-Key' in request.headers:
+            api_key = request.headers['X-API-Key']
+        # Check for API key in query parameter
+        elif 'api_key' in request.args:
+            api_key = request.args.get('api_key')
+        # Check for API key in Authorization header (Bearer token)
+        elif 'Authorization' in request.headers:
+            auth_header = request.headers['Authorization']
+            if auth_header.startswith('Bearer '):
+                api_key = auth_header[7:]
+        
+        if not api_key:
+            return jsonify({'error': 'API key required'}), 401
+        
+        user = get_user_from_api_key(api_key)
+        if not user:
+            return jsonify({'error': 'Invalid API key'}), 401
+        
+        # Store user info in request context
+        request.api_user = user
+        return f(*args, **kwargs)
+    return decorated_function
+
+def api_permission_required(permission_name):
+    """Decorator to require a specific permission for API endpoints"""
+    def decorator(f):
+        @wraps(f)
+        @api_auth_required
+        def decorated_function(*args, **kwargs):
+            if not has_permission(permission_name, user_id=request.api_user['id']):
+                return jsonify({'error': 'Permission denied'}), 403
             return f(*args, **kwargs)
         return decorated_function
     return decorator
@@ -456,9 +513,11 @@ def register_routes(app):
                         password = hash_password(request.form['password'])
                         role_id = request.form.get('role_id')
                         if role_id:
-                            cursor.execute('INSERT INTO User (name, email, password, role_id) VALUES (%s, %s, %s, %s)', (name, email, password, role_id))
+                            api_key = generate_api_key()
+                            cursor.execute('INSERT INTO User (name, email, password, role_id, api_key) VALUES (%s, %s, %s, %s, %s)', (name, email, password, role_id, api_key))
                         else:
-                            cursor.execute('INSERT INTO User (name, email, password) VALUES (%s, %s, %s)', (name, email, password))
+                            api_key = generate_api_key()
+                            cursor.execute('INSERT INTO User (name, email, password, api_key) VALUES (%s, %s, %s, %s)', (name, email, password, api_key))
                         logging.info(f"User {user_name} added user '{name}' ({email}).")
                         conn.commit()
                 elif action == 'edit_user':
@@ -560,10 +619,19 @@ def register_routes(app):
                             cursor.execute('DELETE FROM Role WHERE id = %s', (role_id,))
                             conn.commit()
                             logging.info(f"User {user_name} deleted role '{role_name}'.")
+                elif action == 'regenerate_api_key':
+                    if not has_permission('manage_users', conn=conn):
+                        error = 'You do not have permission to regenerate API keys.'
+                    else:
+                        user_id = request.form['user_id']
+                        new_api_key = generate_api_key()
+                        cursor.execute('UPDATE User SET api_key = %s WHERE id = %s', (new_api_key, user_id))
+                        conn.commit()
+                        logging.info(f"User {user_name} regenerated API key for user {user_id}.")
             
-            # Get users with their roles
+            # Get users with their roles and API keys
             cursor.execute('''
-                SELECT u.id, u.name, u.email, r.id as role_id, r.name as role_name
+                SELECT u.id, u.name, u.email, r.id as role_id, r.name as role_name, u.api_key
                 FROM User u
                 LEFT JOIN Role r ON u.role_id = r.id
                 ORDER BY u.name
@@ -1188,6 +1256,539 @@ def register_routes(app):
     def help():
         return render_with_user('help.html')
 
+    # ========== API ROUTES ==========
+    
+    @app.route('/api/v1/info', methods=['GET'])
+    @api_auth_required
+    def api_info():
+        """Get API information and authenticated user info"""
+        return jsonify({
+            'api_version': '1.0',
+            'user': {
+                'id': request.api_user['id'],
+                'name': request.api_user['name'],
+                'email': request.api_user['email']
+            }
+        })
+    
+    # Devices API
+    @app.route('/api/v1/devices', methods=['GET'])
+    @api_permission_required('view_devices')
+    def api_devices():
+        """Get all devices"""
+        from flask import current_app
+        with get_db_connection(current_app) as conn:
+            cursor = conn.cursor(dictionary=True)
+            cursor.execute('''
+                SELECT d.id, d.name, d.description, dt.name as device_type, dt.icon_class
+                FROM Device d
+                LEFT JOIN DeviceType dt ON d.device_type_id = dt.id
+                ORDER BY d.name
+            ''')
+            devices = cursor.fetchall()
+            for device in devices:
+                cursor.execute('''
+                    SELECT ip.id, ip.ip, ip.hostname, s.id as subnet_id, s.name as subnet_name, s.cidr, s.site
+                    FROM DeviceIPAddress dia
+                    JOIN IPAddress ip ON dia.ip_id = ip.id
+                    JOIN Subnet s ON ip.subnet_id = s.id
+                    WHERE dia.device_id = %s
+                ''', (device['id'],))
+                device['ip_addresses'] = cursor.fetchall()
+        return jsonify({'devices': devices})
+    
+    @app.route('/api/v1/devices/<int:device_id>', methods=['GET'])
+    @api_permission_required('view_device')
+    def api_device(device_id):
+        """Get a specific device"""
+        from flask import current_app
+        with get_db_connection(current_app) as conn:
+            cursor = conn.cursor(dictionary=True)
+            cursor.execute('''
+                SELECT d.id, d.name, d.description, dt.name as device_type, dt.icon_class
+                FROM Device d
+                LEFT JOIN DeviceType dt ON d.device_type_id = dt.id
+                WHERE d.id = %s
+            ''', (device_id,))
+            device = cursor.fetchone()
+            if not device:
+                return jsonify({'error': 'Device not found'}), 404
+            cursor.execute('''
+                SELECT ip.id, ip.ip, ip.hostname, s.id as subnet_id, s.name as subnet_name, s.cidr, s.site
+                FROM DeviceIPAddress dia
+                JOIN IPAddress ip ON dia.ip_id = ip.id
+                JOIN Subnet s ON ip.subnet_id = s.id
+                WHERE dia.device_id = %s
+            ''', (device_id,))
+            device['ip_addresses'] = cursor.fetchall()
+        return jsonify(device)
+    
+    @app.route('/api/v1/devices', methods=['POST'])
+    @api_permission_required('add_device')
+    def api_add_device():
+        """Create a new device"""
+        data = request.get_json()
+        if not data or 'name' not in data:
+            return jsonify({'error': 'Device name is required'}), 400
+        
+        name = data['name']
+        description = data.get('description', '')
+        device_type_id = data.get('device_type_id', 1)
+        
+        from flask import current_app
+        with get_db_connection(current_app) as conn:
+            cursor = conn.cursor()
+            cursor.execute('INSERT INTO Device (name, description, device_type_id) VALUES (%s, %s, %s)',
+                          (name, description, device_type_id))
+            device_id = cursor.lastrowid
+            add_audit_log(request.api_user['id'], 'add_device', f"Added device {name}", conn=conn)
+            conn.commit()
+        return jsonify({'id': device_id, 'name': name, 'description': description, 'device_type_id': device_type_id}), 201
+    
+    @app.route('/api/v1/devices/<int:device_id>', methods=['PUT'])
+    @api_permission_required('edit_device')
+    def api_update_device(device_id):
+        """Update a device"""
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': 'Request body is required'}), 400
+        
+        from flask import current_app
+        with get_db_connection(current_app) as conn:
+            cursor = conn.cursor()
+            cursor.execute('SELECT name FROM Device WHERE id = %s', (device_id,))
+            if not cursor.fetchone():
+                return jsonify({'error': 'Device not found'}), 404
+            
+            updates = []
+            values = []
+            if 'name' in data:
+                updates.append('name = %s')
+                values.append(data['name'])
+            if 'description' in data:
+                updates.append('description = %s')
+                values.append(data['description'])
+            if 'device_type_id' in data:
+                updates.append('device_type_id = %s')
+                values.append(data['device_type_id'])
+            
+            if not updates:
+                return jsonify({'error': 'No fields to update'}), 400
+            
+            values.append(device_id)
+            cursor.execute(f'UPDATE Device SET {", ".join(updates)} WHERE id = %s', values)
+            add_audit_log(request.api_user['id'], 'edit_device', f"Updated device {device_id}", conn=conn)
+            conn.commit()
+        return jsonify({'message': 'Device updated successfully'})
+    
+    @app.route('/api/v1/devices/<int:device_id>', methods=['DELETE'])
+    @api_permission_required('delete_device')
+    def api_delete_device(device_id):
+        """Delete a device"""
+        from flask import current_app
+        with get_db_connection(current_app) as conn:
+            cursor = conn.cursor()
+            cursor.execute('SELECT name FROM Device WHERE id = %s', (device_id,))
+            device = cursor.fetchone()
+            if not device:
+                return jsonify({'error': 'Device not found'}), 404
+            cursor.execute('DELETE FROM Device WHERE id = %s', (device_id,))
+            add_audit_log(request.api_user['id'], 'delete_device', f"Deleted device {device[0]}", conn=conn)
+            conn.commit()
+        return jsonify({'message': 'Device deleted successfully'})
+    
+    @app.route('/api/v1/devices/<int:device_id>/ips', methods=['POST'])
+    @api_permission_required('add_device_ip')
+    def api_add_device_ip(device_id):
+        """Add an IP address to a device"""
+        data = request.get_json()
+        if not data or 'ip_id' not in data:
+            return jsonify({'error': 'ip_id is required'}), 400
+        
+        ip_id = data['ip_id']
+        from flask import current_app
+        with get_db_connection(current_app) as conn:
+            cursor = conn.cursor()
+            cursor.execute('SELECT id FROM Device WHERE id = %s', (device_id,))
+            if not cursor.fetchone():
+                return jsonify({'error': 'Device not found'}), 404
+            cursor.execute('SELECT id FROM IPAddress WHERE id = %s', (ip_id,))
+            if not cursor.fetchone():
+                return jsonify({'error': 'IP address not found'}), 404
+            cursor.execute('SELECT id FROM DeviceIPAddress WHERE device_id = %s AND ip_id = %s', (device_id, ip_id))
+            if cursor.fetchone():
+                return jsonify({'error': 'IP address already assigned to this device'}), 400
+            cursor.execute('INSERT INTO DeviceIPAddress (device_id, ip_id) VALUES (%s, %s)', (device_id, ip_id))
+            add_audit_log(request.api_user['id'], 'add_device_ip', f"Added IP to device {device_id}", conn=conn)
+            conn.commit()
+        return jsonify({'message': 'IP address added to device successfully'}), 201
+    
+    @app.route('/api/v1/devices/<int:device_id>/ips/<int:ip_id>', methods=['DELETE'])
+    @api_permission_required('remove_device_ip')
+    def api_remove_device_ip(device_id, ip_id):
+        """Remove an IP address from a device"""
+        from flask import current_app
+        with get_db_connection(current_app) as conn:
+            cursor = conn.cursor()
+            cursor.execute('DELETE FROM DeviceIPAddress WHERE device_id = %s AND ip_id = %s', (device_id, ip_id))
+            if cursor.rowcount == 0:
+                return jsonify({'error': 'IP address not found on device'}), 404
+            add_audit_log(request.api_user['id'], 'remove_device_ip', f"Removed IP from device {device_id}", conn=conn)
+            conn.commit()
+        return jsonify({'message': 'IP address removed from device successfully'})
+    
+    # Subnets API
+    @app.route('/api/v1/subnets', methods=['GET'])
+    @api_permission_required('view_subnet')
+    def api_subnets():
+        """Get all subnets"""
+        from flask import current_app
+        with get_db_connection(current_app) as conn:
+            cursor = conn.cursor(dictionary=True)
+            cursor.execute('SELECT id, name, cidr, site FROM Subnet ORDER BY site, name')
+            subnets = cursor.fetchall()
+            for subnet in subnets:
+                cursor.execute('SELECT COUNT(*) as total, COUNT(CASE WHEN hostname IS NOT NULL THEN 1 END) as used FROM IPAddress WHERE subnet_id = %s', (subnet['id'],))
+                stats = cursor.fetchone()
+                subnet['total_ips'] = stats['total']
+                subnet['used_ips'] = stats['used']
+                subnet['available_ips'] = stats['total'] - stats['used']
+        return jsonify({'subnets': subnets})
+    
+    @app.route('/api/v1/subnets/<int:subnet_id>', methods=['GET'])
+    @api_permission_required('view_subnet')
+    def api_subnet(subnet_id):
+        """Get a specific subnet with IP addresses"""
+        from flask import current_app
+        with get_db_connection(current_app) as conn:
+            cursor = conn.cursor(dictionary=True)
+            cursor.execute('SELECT id, name, cidr, site FROM Subnet WHERE id = %s', (subnet_id,))
+            subnet = cursor.fetchone()
+            if not subnet:
+                return jsonify({'error': 'Subnet not found'}), 404
+            cursor.execute('''
+                SELECT ip.id, ip.ip, ip.hostname, d.id as device_id, d.name as device_name
+                FROM IPAddress ip
+                LEFT JOIN DeviceIPAddress dia ON ip.id = dia.ip_id
+                LEFT JOIN Device d ON dia.device_id = d.id
+                WHERE ip.subnet_id = %s
+                ORDER BY ip.ip
+            ''', (subnet_id,))
+            subnet['ip_addresses'] = cursor.fetchall()
+        return jsonify(subnet)
+    
+    @app.route('/api/v1/subnets', methods=['POST'])
+    @api_permission_required('add_subnet')
+    def api_add_subnet():
+        """Create a new subnet"""
+        data = request.get_json()
+        if not data or 'name' not in data or 'cidr' not in data:
+            return jsonify({'error': 'Name and CIDR are required'}), 400
+        
+        name = data['name']
+        cidr = data['cidr']
+        site = data.get('site', '')
+        
+        try:
+            network = ip_network(cidr, strict=False)
+            if network.prefixlen < 24:
+                return jsonify({'error': 'Subnet must be /24 or smaller'}), 400
+        except Exception:
+            return jsonify({'error': 'Invalid CIDR format'}), 400
+        
+        from flask import current_app
+        with get_db_connection(current_app) as conn:
+            cursor = conn.cursor()
+            cursor.execute('INSERT INTO Subnet (name, cidr, site) VALUES (%s, %s, %s)', (name, cidr, site))
+            subnet_id = cursor.lastrowid
+            ip_rows = [(str(ip), subnet_id) for ip in network.hosts()]
+            cursor.executemany('INSERT INTO IPAddress (ip, subnet_id) VALUES (%s, %s)', ip_rows)
+            add_audit_log(request.api_user['id'], 'add_subnet', f"Added subnet {name} ({cidr})", subnet_id, conn=conn)
+            conn.commit()
+        return jsonify({'id': subnet_id, 'name': name, 'cidr': cidr, 'site': site}), 201
+    
+    @app.route('/api/v1/subnets/<int:subnet_id>', methods=['PUT'])
+    @api_permission_required('edit_subnet')
+    def api_update_subnet(subnet_id):
+        """Update a subnet"""
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': 'Request body is required'}), 400
+        
+        from flask import current_app
+        with get_db_connection(current_app) as conn:
+            cursor = conn.cursor()
+            cursor.execute('SELECT name, cidr FROM Subnet WHERE id = %s', (subnet_id,))
+            old_subnet = cursor.fetchone()
+            if not old_subnet:
+                return jsonify({'error': 'Subnet not found'}), 404
+            
+            updates = []
+            values = []
+            if 'name' in data:
+                updates.append('name = %s')
+                values.append(data['name'])
+            if 'cidr' in data:
+                updates.append('cidr = %s')
+                values.append(data['cidr'])
+            if 'site' in data:
+                updates.append('site = %s')
+                values.append(data['site'])
+            
+            if not updates:
+                return jsonify({'error': 'No fields to update'}), 400
+            
+            values.append(subnet_id)
+            cursor.execute(f'UPDATE Subnet SET {", ".join(updates)} WHERE id = %s', values)
+            add_audit_log(request.api_user['id'], 'edit_subnet', f"Updated subnet {subnet_id}", subnet_id, conn=conn)
+            conn.commit()
+        return jsonify({'message': 'Subnet updated successfully'})
+    
+    @app.route('/api/v1/subnets/<int:subnet_id>', methods=['DELETE'])
+    @api_permission_required('delete_subnet')
+    def api_delete_subnet(subnet_id):
+        """Delete a subnet"""
+        from flask import current_app
+        with get_db_connection(current_app) as conn:
+            cursor = conn.cursor()
+            cursor.execute('SELECT name FROM Subnet WHERE id = %s', (subnet_id,))
+            subnet = cursor.fetchone()
+            if not subnet:
+                return jsonify({'error': 'Subnet not found'}), 404
+            cursor.execute('DELETE FROM Subnet WHERE id = %s', (subnet_id,))
+            add_audit_log(request.api_user['id'], 'delete_subnet', f"Deleted subnet {subnet[0]}", subnet_id, conn=conn)
+            conn.commit()
+        return jsonify({'message': 'Subnet deleted successfully'})
+    
+    # Racks API
+    @app.route('/api/v1/racks', methods=['GET'])
+    @api_permission_required('view_racks')
+    def api_racks():
+        """Get all racks"""
+        from flask import current_app
+        with get_db_connection(current_app) as conn:
+            cursor = conn.cursor(dictionary=True)
+            cursor.execute('SELECT id, name, site, height_u FROM Rack ORDER BY site, name')
+            racks = cursor.fetchall()
+            for rack in racks:
+                cursor.execute('''
+                    SELECT rd.id, rd.position_u, rd.side, rd.device_id, rd.nonnet_device_name,
+                           d.name as device_name
+                    FROM RackDevice rd
+                    LEFT JOIN Device d ON rd.device_id = d.id
+                    WHERE rd.rack_id = %s
+                    ORDER BY rd.position_u, rd.side
+                ''', (rack['id'],))
+                rack['devices'] = cursor.fetchall()
+        return jsonify({'racks': racks})
+    
+    @app.route('/api/v1/racks/<int:rack_id>', methods=['GET'])
+    @api_permission_required('view_rack')
+    def api_rack(rack_id):
+        """Get a specific rack"""
+        from flask import current_app
+        with get_db_connection(current_app) as conn:
+            cursor = conn.cursor(dictionary=True)
+            cursor.execute('SELECT id, name, site, height_u FROM Rack WHERE id = %s', (rack_id,))
+            rack = cursor.fetchone()
+            if not rack:
+                return jsonify({'error': 'Rack not found'}), 404
+            cursor.execute('''
+                SELECT rd.id, rd.position_u, rd.side, rd.device_id, rd.nonnet_device_name,
+                       d.name as device_name
+                FROM RackDevice rd
+                LEFT JOIN Device d ON rd.device_id = d.id
+                WHERE rd.rack_id = %s
+                ORDER BY rd.position_u, rd.side
+            ''', (rack_id,))
+            rack['devices'] = cursor.fetchall()
+        return jsonify(rack)
+    
+    @app.route('/api/v1/racks', methods=['POST'])
+    @api_permission_required('add_rack')
+    def api_add_rack():
+        """Create a new rack"""
+        data = request.get_json()
+        if not data or 'name' not in data or 'site' not in data or 'height_u' not in data:
+            return jsonify({'error': 'Name, site, and height_u are required'}), 400
+        
+        name = data['name']
+        site = data['site']
+        height_u = data['height_u']
+        
+        from flask import current_app
+        with get_db_connection(current_app) as conn:
+            cursor = conn.cursor()
+            cursor.execute('INSERT INTO Rack (name, site, height_u) VALUES (%s, %s, %s)', (name, site, height_u))
+            rack_id = cursor.lastrowid
+            add_audit_log(request.api_user['id'], 'add_rack', f"Added rack {name}", conn=conn)
+            conn.commit()
+        return jsonify({'id': rack_id, 'name': name, 'site': site, 'height_u': height_u}), 201
+    
+    @app.route('/api/v1/racks/<int:rack_id>', methods=['DELETE'])
+    @api_permission_required('delete_rack')
+    def api_delete_rack(rack_id):
+        """Delete a rack"""
+        from flask import current_app
+        with get_db_connection(current_app) as conn:
+            cursor = conn.cursor()
+            cursor.execute('SELECT name FROM Rack WHERE id = %s', (rack_id,))
+            rack = cursor.fetchone()
+            if not rack:
+                return jsonify({'error': 'Rack not found'}), 404
+            cursor.execute('DELETE FROM Rack WHERE id = %s', (rack_id,))
+            add_audit_log(request.api_user['id'], 'delete_rack', f"Deleted rack {rack[0]}", conn=conn)
+            conn.commit()
+        return jsonify({'message': 'Rack deleted successfully'})
+    
+    @app.route('/api/v1/racks/<int:rack_id>/devices', methods=['POST'])
+    @api_permission_required('add_device_to_rack')
+    def api_add_device_to_rack(rack_id):
+        """Add a device to a rack"""
+        data = request.get_json()
+        if not data or 'position_u' not in data or 'side' not in data:
+            return jsonify({'error': 'position_u and side are required'}), 400
+        
+        position_u = data['position_u']
+        side = data['side']
+        device_id = data.get('device_id')
+        nonnet_device_name = data.get('nonnet_device_name')
+        
+        if not device_id and not nonnet_device_name:
+            return jsonify({'error': 'Either device_id or nonnet_device_name is required'}), 400
+        
+        from flask import current_app
+        with get_db_connection(current_app) as conn:
+            cursor = conn.cursor()
+            cursor.execute('SELECT id FROM Rack WHERE id = %s', (rack_id,))
+            if not cursor.fetchone():
+                return jsonify({'error': 'Rack not found'}), 404
+            cursor.execute('INSERT INTO RackDevice (rack_id, device_id, position_u, side, nonnet_device_name) VALUES (%s, %s, %s, %s, %s)',
+                          (rack_id, device_id, position_u, side, nonnet_device_name))
+            add_audit_log(request.api_user['id'], 'add_device_to_rack', f"Added device to rack {rack_id}", conn=conn)
+            conn.commit()
+        return jsonify({'message': 'Device added to rack successfully'}), 201
+    
+    @app.route('/api/v1/racks/<int:rack_id>/devices/<int:rack_device_id>', methods=['DELETE'])
+    @api_permission_required('remove_device_from_rack')
+    def api_remove_device_from_rack(rack_id, rack_device_id):
+        """Remove a device from a rack"""
+        from flask import current_app
+        with get_db_connection(current_app) as conn:
+            cursor = conn.cursor()
+            cursor.execute('DELETE FROM RackDevice WHERE id = %s AND rack_id = %s', (rack_device_id, rack_id))
+            if cursor.rowcount == 0:
+                return jsonify({'error': 'Device not found in rack'}), 404
+            add_audit_log(request.api_user['id'], 'remove_device_from_rack', f"Removed device from rack {rack_id}", conn=conn)
+            conn.commit()
+        return jsonify({'message': 'Device removed from rack successfully'})
+    
+    # Device Types API
+    @app.route('/api/v1/device-types', methods=['GET'])
+    @api_permission_required('view_device_types')
+    def api_device_types():
+        """Get all device types"""
+        from flask import current_app
+        with get_db_connection(current_app) as conn:
+            cursor = conn.cursor(dictionary=True)
+            cursor.execute('SELECT id, name, icon_class FROM DeviceType ORDER BY name')
+            device_types = cursor.fetchall()
+        return jsonify({'device_types': device_types})
+    
+    # DHCP API
+    @app.route('/api/v1/subnets/<int:subnet_id>/dhcp', methods=['GET'])
+    @api_permission_required('view_dhcp')
+    def api_get_dhcp(subnet_id):
+        """Get DHCP pools for a subnet"""
+        from flask import current_app
+        with get_db_connection(current_app) as conn:
+            cursor = conn.cursor(dictionary=True)
+            cursor.execute('SELECT id, start_ip, end_ip, excluded_ips FROM DHCPPool WHERE subnet_id = %s', (subnet_id,))
+            pools = cursor.fetchall()
+        return jsonify({'pools': pools})
+    
+    @app.route('/api/v1/subnets/<int:subnet_id>/dhcp', methods=['POST'])
+    @api_permission_required('configure_dhcp')
+    def api_configure_dhcp(subnet_id):
+        """Configure DHCP pools for a subnet"""
+        data = request.get_json()
+        if not data or 'pools' not in data:
+            return jsonify({'error': 'pools array is required'}), 400
+        
+        from flask import current_app
+        with get_db_connection(current_app) as conn:
+            cursor = conn.cursor()
+            cursor.execute('DELETE FROM DHCPPool WHERE subnet_id = %s', (subnet_id,))
+            for pool in data['pools']:
+                if 'start_ip' not in pool or 'end_ip' not in pool:
+                    continue
+                excluded_ips = ','.join(pool.get('excluded_ips', []))
+                cursor.execute('INSERT INTO DHCPPool (subnet_id, start_ip, end_ip, excluded_ips) VALUES (%s, %s, %s, %s)',
+                              (subnet_id, pool['start_ip'], pool['end_ip'], excluded_ips))
+            add_audit_log(request.api_user['id'], 'configure_dhcp', f"Configured DHCP for subnet {subnet_id}", subnet_id, conn=conn)
+            conn.commit()
+        return jsonify({'message': 'DHCP pools configured successfully'})
+    
+    # Audit Log API
+    @app.route('/api/v1/audit', methods=['GET'])
+    @api_permission_required('view_audit')
+    def api_audit():
+        """Get audit log entries"""
+        from flask import current_app
+        with get_db_connection(current_app) as conn:
+            cursor = conn.cursor(dictionary=True)
+            limit = request.args.get('limit', 100, type=int)
+            offset = request.args.get('offset', 0, type=int)
+            cursor.execute('''
+                SELECT al.id, al.user_id, u.name as user_name, al.action, al.details, al.subnet_id, al.timestamp
+                FROM AuditLog al
+                LEFT JOIN User u ON al.user_id = u.id
+                ORDER BY al.timestamp DESC
+                LIMIT %s OFFSET %s
+            ''', (limit, offset))
+            logs = cursor.fetchall()
+        return jsonify({'logs': logs})
+    
+    # Users API (admin only)
+    @app.route('/api/v1/users', methods=['GET'])
+    @api_permission_required('view_users')
+    def api_users():
+        """Get all users (admin only)"""
+        from flask import current_app
+        with get_db_connection(current_app) as conn:
+            cursor = conn.cursor(dictionary=True)
+            cursor.execute('''
+                SELECT u.id, u.name, u.email, r.id as role_id, r.name as role_name
+                FROM User u
+                LEFT JOIN Role r ON u.role_id = r.id
+                ORDER BY u.name
+            ''')
+            users = cursor.fetchall()
+            # Don't return API keys in list
+            for user in users:
+                user.pop('api_key', None)
+        return jsonify({'users': users})
+    
+    # Roles API (admin only)
+    @app.route('/api/v1/roles', methods=['GET'])
+    @api_permission_required('view_users')
+    def api_roles():
+        """Get all roles (admin only)"""
+        from flask import current_app
+        with get_db_connection(current_app) as conn:
+            cursor = conn.cursor(dictionary=True)
+            cursor.execute('SELECT id, name, description FROM Role ORDER BY name')
+            roles = cursor.fetchall()
+            for role in roles:
+                cursor.execute('''
+                    SELECT p.id, p.name, p.description, p.category
+                    FROM RolePermission rp
+                    JOIN Permission p ON rp.permission_id = p.id
+                    WHERE rp.role_id = %s
+                ''', (role['id'],))
+                role['permissions'] = cursor.fetchall()
+        return jsonify({'roles': roles})
+
     def get_current_user_name():
         user_id = session.get('user_id')
         if not user_id:
@@ -1237,3 +1838,16 @@ def register_routes(app):
     app.add_url_rule('/rack/<int:rack_id>/delete', 'delete_rack', delete_rack, methods=['POST'])
     app.add_url_rule('/rack/<int:rack_id>/export_csv', 'export_rack_csv', export_rack_csv)
     app.add_url_rule('/help', 'help', help)
+    
+    # API key regeneration route
+    @app.route('/regenerate_api_key', methods=['POST'])
+    @permission_required('manage_users')
+    def regenerate_api_key():
+        user_id = request.form['user_id']
+        from flask import current_app
+        with get_db_connection(current_app) as conn:
+            cursor = conn.cursor()
+            new_api_key = generate_api_key()
+            cursor.execute('UPDATE User SET api_key = %s WHERE id = %s', (new_api_key, user_id))
+            conn.commit()
+        return redirect(url_for('users'))

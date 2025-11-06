@@ -1,6 +1,7 @@
 import os
 import hashlib
 import base64
+import secrets
 import mysql.connector
 from flask import current_app
 
@@ -17,6 +18,10 @@ def verify_password(password, hashed):
     except ValueError:
         return False
     return hash_password(password, salt) == hashed
+
+def generate_api_key():
+    """Generate a secure API key"""
+    return secrets.token_urlsafe(32)
 
 def get_db_connection(app=None):
     if app is None:
@@ -189,6 +194,11 @@ def init_db(app=None):
             if e.errno != 1061 and e.errno != 1826 and 'Duplicate' not in str(e):
                 raise
     
+    # Add api_key column to User table if it doesn't exist
+    cursor.execute("SHOW COLUMNS FROM User LIKE 'api_key'")
+    if not cursor.fetchone():
+        cursor.execute('ALTER TABLE User ADD COLUMN api_key VARCHAR(255) DEFAULT NULL UNIQUE')
+    
     # Define all permissions with categories
     permissions = [
         # View permissions
@@ -333,9 +343,17 @@ def init_db(app=None):
     # This ensures existing users maintain admin access
     cursor.execute('UPDATE User SET role_id = %s WHERE role_id IS NULL', (admin_role_id,))
     
+    # Generate API keys for users that don't have one
+    cursor.execute('SELECT id FROM User WHERE api_key IS NULL')
+    users_without_api_key = cursor.fetchall()
+    for (user_id,) in users_without_api_key:
+        api_key = generate_api_key()
+        cursor.execute('UPDATE User SET api_key = %s WHERE id = %s', (api_key, user_id))
+    
     cursor.execute('SELECT COUNT(*) FROM User')
     if cursor.fetchone()[0] == 0:
-        cursor.execute('''INSERT INTO User (name, email, password, role_id) VALUES (%s, %s, %s, %s)''',
-            ('admin', 'admin@example.com', hash_password('password'), admin_role_id))
+        api_key = generate_api_key()
+        cursor.execute('''INSERT INTO User (name, email, password, role_id, api_key) VALUES (%s, %s, %s, %s, %s)''',
+            ('admin', 'admin@example.com', hash_password('password'), admin_role_id, api_key))
     conn.commit()
     conn.close()
