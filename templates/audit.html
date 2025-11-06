@@ -75,11 +75,39 @@
                     <span class="hidden sm:inline">Prev</span>
                 </a>
                 {% endif %}
-                {% for p in range(1, total_pages+1) %}
-                {% set page_args = query_args.copy() %}
-                {% set _ = page_args.update({'page': p}) %}
-                <a href="{{ url_for('audit', **page_args) }}" class="px-3 py-1 rounded {{ 'bg-gray-200 dark:bg-gray-500' if p == page else 'bg-gray-400 hover:bg-gray-200 dark:bg-zinc-700 dark:hover:bg-zinc-600' }}">{{ p }}</a>
+                
+                {# Smart pagination logic #}
+                {% set delta = 2 %}
+                {% set start_page = [1, page - delta]|max %}
+                {% set end_page = [total_pages, page + delta]|min %}
+                
+                {# Show first page if we're not near the start #}
+                {% if start_page > 1 %}
+                    {% set page_args = query_args.copy() %}
+                    {% set _ = page_args.update({'page': 1}) %}
+                    <a href="{{ url_for('audit', **page_args) }}" class="px-3 py-1 rounded {{ 'bg-gray-200 dark:bg-gray-500' if 1 == page else 'bg-gray-400 hover:bg-gray-200 dark:bg-zinc-700 dark:hover:bg-zinc-600' }}">1</a>
+                    {% if start_page > 2 %}
+                        <span class="px-3 py-1 text-gray-600 dark:text-gray-400">…</span>
+                    {% endif %}
+                {% endif %}
+                
+                {# Show pages around current page #}
+                {% for p in range(start_page, end_page + 1) %}
+                    {% set page_args = query_args.copy() %}
+                    {% set _ = page_args.update({'page': p}) %}
+                    <a href="{{ url_for('audit', **page_args) }}" class="px-3 py-1 rounded {{ 'bg-gray-200 dark:bg-gray-500' if p == page else 'bg-gray-400 hover:bg-gray-200 dark:bg-zinc-700 dark:hover:bg-zinc-600' }}">{{ p }}</a>
                 {% endfor %}
+                
+                {# Show last page if we're not near the end #}
+                {% if end_page < total_pages %}
+                    {% if end_page < total_pages - 1 %}
+                        <span class="px-3 py-1 text-gray-600 dark:text-gray-400">…</span>
+                    {% endif %}
+                    {% set page_args = query_args.copy() %}
+                    {% set _ = page_args.update({'page': total_pages}) %}
+                    <a href="{{ url_for('audit', **page_args) }}" class="px-3 py-1 rounded {{ 'bg-gray-200 dark:bg-gray-500' if total_pages == page else 'bg-gray-400 hover:bg-gray-200 dark:bg-zinc-700 dark:hover:bg-zinc-600' }}">{{ total_pages }}</a>
+                {% endif %}
+                
                 {% if page < total_pages %}
                 {% set next_args = query_args.copy() %}
                 {% set _ = next_args.update({'page': page+1}) %}
