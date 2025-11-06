@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.2.0](https://github.com/JDB-NET/ipam/compare/v1.1.1...v1.2.0) (2025-11-06)
+
+
+### Features
+
+* :sparkles: added the ability to create/edit/remove device types ([d68eefc](https://github.com/JDB-NET/ipam/commit/d68eefcf0cc4a59cda9cedb3e126d974ee45d2ad))
+
+
+### Bug Fixes
+
+* :bug: missing button classes ([f93fa15](https://github.com/JDB-NET/ipam/commit/f93fa155eb5d6c9ff4ed19f332c3ad6fff328d31))
+
 ## [1.1.1](https://github.com/JDB-NET/ipam/compare/v1.1.0...v1.1.1) (2025-11-01)
 
 
