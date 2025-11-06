@@ -6,6 +6,7 @@ import os
 import csv
 from io import StringIO, BytesIO
 import logging
+import mysql.connector
 
 app = None
 
@@ -601,6 +602,70 @@ def register_routes(app):
             stats = cursor.fetchall()
         return render_with_user('device_type_stats.html', stats=stats)
 
+    @app.route('/device_types', methods=['GET', 'POST'])
+    @login_required
+    def device_types():
+        from flask import current_app
+        error = None
+        with get_db_connection(current_app) as conn:
+            cursor = conn.cursor()
+            if request.method == 'POST':
+                action = request.form['action']
+                user_name = get_current_user_name()
+                if action == 'add':
+                    name = request.form['name'].strip()
+                    icon_class = request.form['icon_class'].strip()
+                    if not name:
+                        error = 'Device type name is required.'
+                    elif not icon_class:
+                        error = 'Icon class is required.'
+                    else:
+                        try:
+                            cursor.execute('INSERT INTO DeviceType (name, icon_class) VALUES (%s, %s)', (name, icon_class))
+                            conn.commit()
+                            logging.info(f"User {user_name} added device type '{name}' with icon '{icon_class}'.")
+                        except mysql.connector.IntegrityError as e:
+                            if e.errno == 1062:  # Duplicate entry
+                                error = f"Device type '{name}' already exists."
+                            else:
+                                raise
+                elif action == 'edit':
+                    device_type_id = request.form['device_type_id']
+                    name = request.form['name'].strip()
+                    icon_class = request.form['icon_class'].strip()
+                    if not name:
+                        error = 'Device type name is required.'
+                    elif not icon_class:
+                        error = 'Icon class is required.'
+                    else:
+                        try:
+                            cursor.execute('UPDATE DeviceType SET name = %s, icon_class = %s WHERE id = %s', (name, icon_class, device_type_id))
+                            conn.commit()
+                            logging.info(f"User {user_name} edited device type {device_type_id} to '{name}' with icon '{icon_class}'.")
+                        except mysql.connector.IntegrityError as e:
+                            if e.errno == 1062:  # Duplicate entry
+                                error = f"Device type '{name}' already exists."
+                            else:
+                                raise
+                elif action == 'delete':
+                    device_type_id = request.form['device_type_id']
+                    # Check if any devices are using this device type
+                    cursor.execute('SELECT COUNT(*) FROM Device WHERE device_type_id = %s', (device_type_id,))
+                    device_count = cursor.fetchone()[0]
+                    if device_count > 0:
+                        cursor.execute('SELECT name FROM DeviceType WHERE id = %s', (device_type_id,))
+                        device_type_name = cursor.fetchone()[0]
+                        error = f"Cannot delete device type '{device_type_name}' because {device_count} device(s) are using it."
+                    else:
+                        cursor.execute('SELECT name FROM DeviceType WHERE id = %s', (device_type_id,))
+                        device_type_name = cursor.fetchone()[0]
+                        cursor.execute('DELETE FROM DeviceType WHERE id = %s', (device_type_id,))
+                        conn.commit()
+                        logging.info(f"User {user_name} deleted device type '{device_type_name}'.")
+            cursor.execute('SELECT id, name, icon_class FROM DeviceType ORDER BY name')
+            device_types = cursor.fetchall()
+        return render_with_user('device_types.html', device_types=device_types, error=error)
+
     @app.route('/devices/type/<device_type>')
     @login_required
     def devices_by_type(device_type):
@@ -959,6 +1024,7 @@ def register_routes(app):
     app.add_url_rule('/subnet/<int:subnet_id>/export_csv', 'export_subnet_csv', export_subnet_csv)
     app.add_url_rule('/subnet/<int:subnet_id>/dhcp', 'dhcp_pool', dhcp_pool, methods=['GET', 'POST'])
     app.add_url_rule('/device_type_stats', 'device_type_stats', device_type_stats)
+    app.add_url_rule('/device_types', 'device_types', device_types, methods=['GET', 'POST'])
     app.add_url_rule('/devices/type/<device_type>', 'devices_by_type', devices_by_type)
     app.add_url_rule('/racks', 'racks', racks)
     app.add_url_rule('/rack/add', 'add_rack', add_rack, methods=['GET', 'POST'])
