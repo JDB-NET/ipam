@@ -18,7 +18,7 @@
                 <li class="site-group bg-gray-200 dark:bg-zinc-800 rounded-xl shadow-lg">
                     <div class="flex flex-row items-center justify-between p-4 cursor-pointer site-header">
                         <h2 class="text-xl font-bold mb-0 text-gray-900 dark:text-white">{{ site }}</h2>
-                        <button type="button" class="expand-btn ml-2 flex items-center" aria-label="Expand site">
+                        <button type="button" class="expand-btn ml-2 flex items-center hover:cursor-pointer" aria-label="Expand site">
                             <i class="fas fa-chevron-down"></i>
                         </button>
                     </div>
@@ -29,7 +29,7 @@
                                 <p class="text-gray-900 dark:text-white text-lg font-medium">{{ subnet.name }}</p>
                                 <p class="text-sm text-gray-800 dark:text-gray-400">{{ subnet.cidr }}</p>
                             </a>
-                            <button type="button" class="export-csv-btn ml-2 bg-gray-200 hover:bg-gray-400 dark:bg-zinc-600 dark:hover:bg-zinc-500 flex items-center justify-center rounded-full w-9 h-9" title="Export as CSV" data-subnet-id="{{ subnet.id }}">
+                            <button type="button" class="export-csv-btn ml-2 bg-gray-200 hover:bg-gray-400 dark:bg-zinc-600 dark:hover:bg-zinc-500 hover:cursor-pointer flex items-center justify-center rounded-full w-9 h-9" title="Export as CSV" data-subnet-id="{{ subnet.id }}">
                                 <i class="fas fa-file-csv"></i>
                             </button>
                         </li>
