@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.4.2](https://github.com/JDB-NET/ipam/compare/v1.4.1...v1.4.2) (2025-11-08)
+
+
+### Bug Fixes
+
+* :bug: ensure all fields are updated by api ([5c1ad03](https://github.com/JDB-NET/ipam/commit/5c1ad039904b2c8c8629242b5558b03da5ad782c))
+
 ## [1.4.1](https://github.com/JDB-NET/ipam/compare/v1.4.0...v1.4.1) (2025-11-06)
 
 
