@@ -1356,30 +1356,41 @@ def register_routes(app):
         from flask import current_app
         with get_db_connection(current_app) as conn:
             cursor = conn.cursor()
-            cursor.execute('SELECT name FROM Device WHERE id = %s', (device_id,))
-            if not cursor.fetchone():
+            cursor.execute('SELECT name, description, device_type_id FROM Device WHERE id = %s', (device_id,))
+            current = cursor.fetchone()
+            if not current:
                 return jsonify({'error': 'Device not found'}), 404
+            current_name, current_description, current_device_type = current
             
             updates = []
             values = []
+            rename = False
+            new_name = current_name
             if 'name' in data:
-                updates.append('name = %s')
-                values.append(data['name'])
-            if 'description' in data:
+                new_name = data['name']
+                if new_name != current_name:
+                    updates.append('name = %s')
+                    values.append(new_name)
+                    rename = True
+            if 'description' in data and data['description'] != current_description:
                 updates.append('description = %s')
                 values.append(data['description'])
-            if 'device_type_id' in data:
+            if 'device_type_id' in data and data['device_type_id'] != current_device_type:
                 updates.append('device_type_id = %s')
                 values.append(data['device_type_id'])
             
             if not updates:
-                return jsonify({'error': 'No fields to update'}), 400
+                return jsonify({'error': 'No changes to apply'}), 400
             
             values.append(device_id)
             cursor.execute(f'UPDATE Device SET {", ".join(updates)} WHERE id = %s', values)
-            add_audit_log(request.api_user['id'], 'edit_device', f"Updated device {device_id}", conn=conn)
+            
+            if rename:
+                cursor.execute('UPDATE IPAddress SET hostname = %s WHERE hostname = %s', (new_name, current_name))
+                add_audit_log(request.api_user['id'], 'rename_device', f"Renamed device '{current_name}' to '{new_name}'", conn=conn)
+            
             conn.commit()
-        return jsonify({'message': 'Device updated successfully'})
+        return jsonify({'message': 'Device updated successfully', 'device': {'id': device_id, 'name': new_name}})
     
     @app.route('/api/v1/devices/<int:device_id>', methods=['DELETE'])
     @api_permission_required('delete_device')
@@ -1392,10 +1403,16 @@ def register_routes(app):
             device = cursor.fetchone()
             if not device:
                 return jsonify({'error': 'Device not found'}), 404
+            device_name = device[0]
+            cursor.execute('SELECT ip_id FROM DeviceIPAddress WHERE device_id = %s', (device_id,))
+            ip_ids = [row[0] for row in cursor.fetchall()]
+            if ip_ids:
+                cursor.executemany('UPDATE IPAddress SET hostname = NULL WHERE id = %s', [(ip_id,) for ip_id in ip_ids])
+            cursor.execute('DELETE FROM DeviceIPAddress WHERE device_id = %s', (device_id,))
             cursor.execute('DELETE FROM Device WHERE id = %s', (device_id,))
-            add_audit_log(request.api_user['id'], 'delete_device', f"Deleted device {device[0]}", conn=conn)
+            add_audit_log(request.api_user['id'], 'delete_device', f"Deleted device {device_name}", conn=conn)
             conn.commit()
-        return jsonify({'message': 'Device deleted successfully'})
+        return jsonify({'message': 'Device deleted successfully', 'device': {'id': device_id, 'name': device_name}})
     
     @app.route('/api/v1/devices/<int:device_id>/ips', methods=['POST'])
     @api_permission_required('add_device_ip')
@@ -1409,19 +1426,57 @@ def register_routes(app):
         from flask import current_app
         with get_db_connection(current_app) as conn:
             cursor = conn.cursor()
-            cursor.execute('SELECT id FROM Device WHERE id = %s', (device_id,))
-            if not cursor.fetchone():
+            cursor.execute('SELECT id, name FROM Device WHERE id = %s', (device_id,))
+            device_row = cursor.fetchone()
+            if not device_row:
                 return jsonify({'error': 'Device not found'}), 404
-            cursor.execute('SELECT id FROM IPAddress WHERE id = %s', (ip_id,))
-            if not cursor.fetchone():
+            device_name = device_row[1]
+
+            cursor.execute('SELECT ip, subnet_id FROM IPAddress WHERE id = %s', (ip_id,))
+            ip_row = cursor.fetchone()
+            if not ip_row:
                 return jsonify({'error': 'IP address not found'}), 404
-            cursor.execute('SELECT id FROM DeviceIPAddress WHERE device_id = %s AND ip_id = %s', (device_id, ip_id))
+            ip, subnet_id = ip_row
+
+            cursor.execute('SELECT id FROM DeviceIPAddress WHERE ip_id = %s', (ip_id,))
             if cursor.fetchone():
-                return jsonify({'error': 'IP address already assigned to this device'}), 400
+                return jsonify({'error': 'IP address already assigned to a device'}), 400
+
+            cursor.execute('SELECT start_ip, end_ip, excluded_ips FROM DHCPPool WHERE subnet_id = %s', (subnet_id,))
+            dhcp_row = cursor.fetchone()
+            if dhcp_row:
+                start_ip, end_ip, excluded_ips = dhcp_row
+                excluded_list = [x for x in (excluded_ips or '').replace(' ', '').split(',') if x]
+                if ip not in excluded_list:
+                    cursor.execute('SELECT ip FROM IPAddress WHERE subnet_id = %s ORDER BY ip', (subnet_id,))
+                    all_ips = [row[0] for row in cursor.fetchall()]
+                    in_range = False
+                    reserved_for_dhcp = False
+                    for candidate_ip in all_ips:
+                        if candidate_ip == start_ip:
+                            in_range = True
+                        if in_range and candidate_ip == ip:
+                            reserved_for_dhcp = True
+                            break
+                        if candidate_ip == end_ip:
+                            if candidate_ip == ip:
+                                reserved_for_dhcp = True
+                            in_range = False
+                    if reserved_for_dhcp:
+                        return jsonify({'error': 'This IP is reserved for DHCP and cannot be assigned to a device'}), 400
+
             cursor.execute('INSERT INTO DeviceIPAddress (device_id, ip_id) VALUES (%s, %s)', (device_id, ip_id))
-            add_audit_log(request.api_user['id'], 'add_device_ip', f"Added IP to device {device_id}", conn=conn)
+            cursor.execute('UPDATE IPAddress SET hostname = %s WHERE id = %s', (device_name, ip_id))
+            cursor.execute('SELECT name, cidr FROM Subnet WHERE id = %s', (subnet_id,))
+            subnet_row = cursor.fetchone()
+            if subnet_row:
+                subnet_name, subnet_cidr = subnet_row
+                details = f"Assigned IP {ip} ({subnet_name} {subnet_cidr}) to device {device_name}"
+            else:
+                details = f"Assigned IP {ip} to device {device_name}"
+            add_audit_log(request.api_user['id'], 'device_add_ip', details, subnet_id, conn=conn)
             conn.commit()
-        return jsonify({'message': 'IP address added to device successfully'}), 201
+        return jsonify({'message': 'IP address added to device successfully', 'ip_id': ip_id}), 201
     
     @app.route('/api/v1/devices/<int:device_id>/ips/<int:ip_id>', methods=['DELETE'])
     @api_permission_required('remove_device_ip')
@@ -1430,12 +1485,29 @@ def register_routes(app):
         from flask import current_app
         with get_db_connection(current_app) as conn:
             cursor = conn.cursor()
-            cursor.execute('DELETE FROM DeviceIPAddress WHERE device_id = %s AND ip_id = %s', (device_id, ip_id))
-            if cursor.rowcount == 0:
+            cursor.execute('''
+                SELECT ip.ip, ip.subnet_id, d.name
+                FROM DeviceIPAddress dia
+                JOIN IPAddress ip ON dia.ip_id = ip.id
+                JOIN Device d ON dia.device_id = d.id
+                WHERE dia.device_id = %s AND dia.ip_id = %s
+            ''', (device_id, ip_id))
+            row = cursor.fetchone()
+            if not row:
                 return jsonify({'error': 'IP address not found on device'}), 404
-            add_audit_log(request.api_user['id'], 'remove_device_ip', f"Removed IP from device {device_id}", conn=conn)
+            ip, subnet_id, device_name = row
+            cursor.execute('DELETE FROM DeviceIPAddress WHERE device_id = %s AND ip_id = %s', (device_id, ip_id))
+            cursor.execute('UPDATE IPAddress SET hostname = NULL WHERE id = %s', (ip_id,))
+            cursor.execute('SELECT name, cidr FROM Subnet WHERE id = %s', (subnet_id,))
+            subnet_row = cursor.fetchone()
+            if subnet_row:
+                subnet_name, subnet_cidr = subnet_row
+                details = f"Removed IP {ip} ({subnet_name} {subnet_cidr}) from device {device_name}"
+            else:
+                details = f"Removed IP {ip} from device {device_name}"
+            add_audit_log(request.api_user['id'], 'device_delete_ip', details, subnet_id, conn=conn)
             conn.commit()
-        return jsonify({'message': 'IP address removed from device successfully'})
+        return jsonify({'message': 'IP address removed from device successfully', 'ip_id': ip_id})
     
     # Subnets API
     @app.route('/api/v1/subnets', methods=['GET'])
@@ -1518,31 +1590,42 @@ def register_routes(app):
         from flask import current_app
         with get_db_connection(current_app) as conn:
             cursor = conn.cursor()
-            cursor.execute('SELECT name, cidr FROM Subnet WHERE id = %s', (subnet_id,))
+            cursor.execute('SELECT name, cidr, site FROM Subnet WHERE id = %s', (subnet_id,))
             old_subnet = cursor.fetchone()
             if not old_subnet:
                 return jsonify({'error': 'Subnet not found'}), 404
+            old_name, old_cidr, old_site = old_subnet
+            
+            new_name = data.get('name', old_name)
+            new_cidr = data.get('cidr', old_cidr)
+            new_site = data.get('site', old_site)
             
             updates = []
             values = []
-            if 'name' in data:
+            if new_name != old_name:
                 updates.append('name = %s')
-                values.append(data['name'])
-            if 'cidr' in data:
+                values.append(new_name)
+            if new_cidr != old_cidr:
                 updates.append('cidr = %s')
-                values.append(data['cidr'])
-            if 'site' in data:
+                values.append(new_cidr)
+            if new_site != old_site:
                 updates.append('site = %s')
-                values.append(data['site'])
+                values.append(new_site)
             
             if not updates:
-                return jsonify({'error': 'No fields to update'}), 400
+                return jsonify({'error': 'No changes to apply'}), 400
             
             values.append(subnet_id)
             cursor.execute(f'UPDATE Subnet SET {", ".join(updates)} WHERE id = %s', values)
-            add_audit_log(request.api_user['id'], 'edit_subnet', f"Updated subnet {subnet_id}", subnet_id, conn=conn)
+            add_audit_log(
+                request.api_user['id'],
+                'edit_subnet',
+                f"Edited subnet from {old_name} ({old_cidr}) to {new_name} ({new_cidr}) at site {new_site or 'Unassigned'}",
+                subnet_id,
+                conn=conn
+            )
             conn.commit()
-        return jsonify({'message': 'Subnet updated successfully'})
+        return jsonify({'message': 'Subnet updated successfully', 'subnet': {'id': subnet_id, 'name': new_name, 'cidr': new_cidr, 'site': new_site}})
     
     @app.route('/api/v1/subnets/<int:subnet_id>', methods=['DELETE'])
     @api_permission_required('delete_subnet')
@@ -1551,14 +1634,22 @@ def register_routes(app):
         from flask import current_app
         with get_db_connection(current_app) as conn:
             cursor = conn.cursor()
-            cursor.execute('SELECT name FROM Subnet WHERE id = %s', (subnet_id,))
+            cursor.execute('SELECT name, cidr FROM Subnet WHERE id = %s', (subnet_id,))
             subnet = cursor.fetchone()
             if not subnet:
                 return jsonify({'error': 'Subnet not found'}), 404
+            subnet_name, subnet_cidr = subnet
+            cursor.execute('SELECT id FROM IPAddress WHERE subnet_id = %s', (subnet_id,))
+            ip_ids = [row[0] for row in cursor.fetchall()]
+            if ip_ids:
+                cursor.executemany('DELETE FROM DeviceIPAddress WHERE ip_id = %s', [(ip_id,) for ip_id in ip_ids])
+            cursor.execute('DELETE FROM DHCPPool WHERE subnet_id = %s', (subnet_id,))
+            cursor.execute('UPDATE AuditLog SET subnet_id = NULL WHERE subnet_id = %s', (subnet_id,))
+            cursor.execute('DELETE FROM IPAddress WHERE subnet_id = %s', (subnet_id,))
             cursor.execute('DELETE FROM Subnet WHERE id = %s', (subnet_id,))
-            add_audit_log(request.api_user['id'], 'delete_subnet', f"Deleted subnet {subnet[0]}", subnet_id, conn=conn)
+            add_audit_log(request.api_user['id'], 'delete_subnet', f"Deleted subnet {subnet_name} ({subnet_cidr})", subnet_id, conn=conn)
             conn.commit()
-        return jsonify({'message': 'Subnet deleted successfully'})
+        return jsonify({'message': 'Subnet deleted successfully', 'subnet': {'id': subnet_id, 'name': subnet_name, 'cidr': subnet_cidr}})
     
     # Racks API
     @app.route('/api/v1/racks', methods=['GET'])
@@ -1571,6 +1662,10 @@ def register_routes(app):
             cursor.execute('SELECT id, name, site, height_u FROM Rack ORDER BY site, name')
             racks = cursor.fetchall()
             for rack in racks:
+                cursor.execute('SELECT COUNT(*) as used FROM RackDevice WHERE rack_id = %s AND side = %s', (rack['id'], 'front'))
+                usage_row = cursor.fetchone()
+                rack['used_u'] = usage_row['used'] if usage_row and 'used' in usage_row else 0
+                rack['percent_full'] = int((rack['used_u'] / rack['height_u']) * 100) if rack['height_u'] else 0
                 cursor.execute('''
                     SELECT rd.id, rd.position_u, rd.side, rd.device_id, rd.nonnet_device_name,
                            d.name as device_name
@@ -1608,6 +1703,7 @@ def register_routes(app):
     @api_permission_required('add_rack')
     def api_add_rack():
         """Create a new rack"""
+        from flask import current_app
         data = request.get_json()
         if not data or 'name' not in data or 'site' not in data or 'height_u' not in data:
             return jsonify({'error': 'Name, site, and height_u are required'}), 400
@@ -1615,13 +1711,18 @@ def register_routes(app):
         name = data['name']
         site = data['site']
         height_u = data['height_u']
+        try:
+            height_u = int(height_u)
+        except (TypeError, ValueError):
+            return jsonify({'error': 'height_u must be an integer'}), 400
+        if height_u <= 0:
+            return jsonify({'error': 'height_u must be greater than zero'}), 400
         
-        from flask import current_app
         with get_db_connection(current_app) as conn:
             cursor = conn.cursor()
             cursor.execute('INSERT INTO Rack (name, site, height_u) VALUES (%s, %s, %s)', (name, site, height_u))
             rack_id = cursor.lastrowid
-            add_audit_log(request.api_user['id'], 'add_rack', f"Added rack {name}", conn=conn)
+            add_audit_log(request.api_user['id'], 'add_rack', f"Added rack '{name}' at site '{site}' ({height_u}U)", conn=conn)
             conn.commit()
         return jsonify({'id': rack_id, 'name': name, 'site': site, 'height_u': height_u}), 201
     
@@ -1636,15 +1737,17 @@ def register_routes(app):
             rack = cursor.fetchone()
             if not rack:
                 return jsonify({'error': 'Rack not found'}), 404
+            rack_name = rack[0]
             cursor.execute('DELETE FROM Rack WHERE id = %s', (rack_id,))
-            add_audit_log(request.api_user['id'], 'delete_rack', f"Deleted rack {rack[0]}", conn=conn)
+            add_audit_log(request.api_user['id'], 'delete_rack', f"Deleted rack '{rack_name}'", conn=conn)
             conn.commit()
-        return jsonify({'message': 'Rack deleted successfully'})
+        return jsonify({'message': 'Rack deleted successfully', 'rack': {'id': rack_id, 'name': rack_name}})
     
     @app.route('/api/v1/racks/<int:rack_id>/devices', methods=['POST'])
     @api_permission_required('add_device_to_rack')
     def api_add_device_to_rack(rack_id):
         """Add a device to a rack"""
+        from flask import current_app
         data = request.get_json()
         if not data or 'position_u' not in data or 'side' not in data:
             return jsonify({'error': 'position_u and side are required'}), 400
@@ -1654,20 +1757,75 @@ def register_routes(app):
         device_id = data.get('device_id')
         nonnet_device_name = data.get('nonnet_device_name')
         
-        if not device_id and not nonnet_device_name:
+        if device_id is None and not nonnet_device_name:
             return jsonify({'error': 'Either device_id or nonnet_device_name is required'}), 400
         
-        from flask import current_app
+        try:
+            position_u = int(position_u)
+        except (TypeError, ValueError):
+            return jsonify({'error': 'position_u must be an integer'}), 400
+        side = str(side).lower()
+        if side not in ('front', 'back'):
+            return jsonify({'error': "side must be either 'front' or 'back'"}), 400
+        if device_id is not None:
+            try:
+                device_id = int(device_id)
+            except (TypeError, ValueError):
+                return jsonify({'error': 'device_id must be an integer'}), 400
+        
         with get_db_connection(current_app) as conn:
-            cursor = conn.cursor()
-            cursor.execute('SELECT id FROM Rack WHERE id = %s', (rack_id,))
-            if not cursor.fetchone():
+            cursor = conn.cursor(dictionary=True)
+            cursor.execute('SELECT name, height_u FROM Rack WHERE id = %s', (rack_id,))
+            rack = cursor.fetchone()
+            if not rack:
                 return jsonify({'error': 'Rack not found'}), 404
-            cursor.execute('INSERT INTO RackDevice (rack_id, device_id, position_u, side, nonnet_device_name) VALUES (%s, %s, %s, %s, %s)',
-                          (rack_id, device_id, position_u, side, nonnet_device_name))
-            add_audit_log(request.api_user['id'], 'add_device_to_rack', f"Added device to rack {rack_id}", conn=conn)
+            if position_u < 1 or position_u > rack['height_u']:
+                return jsonify({'error': f'Invalid U position: {position_u}. Rack is {rack["height_u"]}U tall.'}), 400
+            
+            cursor.execute('SELECT COUNT(*) as occupied_count FROM RackDevice WHERE rack_id = %s AND position_u = %s AND side = %s', (rack_id, position_u, side))
+            occupied = cursor.fetchone()
+            if occupied and occupied['occupied_count'] > 0:
+                return jsonify({'error': f'U{position_u} on the {side} is already occupied.'}), 400
+            
+            if device_id is not None:
+                cursor.execute('SELECT name FROM Device WHERE id = %s', (device_id,))
+                device_row = cursor.fetchone()
+                if not device_row:
+                    return jsonify({'error': 'Device not found'}), 404
+                device_name = device_row['name']
+                cursor.execute(
+                    'INSERT INTO RackDevice (rack_id, device_id, position_u, side, nonnet_device_name) VALUES (%s, %s, %s, %s, NULL)',
+                    (rack_id, device_id, position_u, side)
+                )
+                action = 'rack_add_device'
+                details = f"Assigned device '{device_name}' to rack '{rack['name']}' U{position_u} ({side})"
+            else:
+                nonnet_device_name = (nonnet_device_name or '').strip()
+                if not nonnet_device_name:
+                    return jsonify({'error': 'nonnet_device_name is required when device_id is not provided'}), 400
+                cursor.execute(
+                    'INSERT INTO RackDevice (rack_id, device_id, position_u, side, nonnet_device_name) VALUES (%s, NULL, %s, %s, %s)',
+                    (rack_id, position_u, side, nonnet_device_name)
+                )
+                device_name = nonnet_device_name
+                action = 'rack_add_nonnet_device'
+                details = f"Added non-networked device '{device_name}' to rack '{rack['name']}' U{position_u} ({side})"
+            
+            rack_device_id = cursor.lastrowid
+            add_audit_log(request.api_user['id'], action, details, conn=conn)
             conn.commit()
-        return jsonify({'message': 'Device added to rack successfully'}), 201
+        return jsonify({
+            'message': 'Device added to rack successfully',
+            'rack_device': {
+                'id': rack_device_id,
+                'rack_id': rack_id,
+                'device_id': device_id,
+                'nonnet_device_name': device_name if device_id is None else None,
+                'device_name': device_name,
+                'position_u': position_u,
+                'side': side
+            }
+        }), 201
     
     @app.route('/api/v1/racks/<int:rack_id>/devices/<int:rack_device_id>', methods=['DELETE'])
     @api_permission_required('remove_device_from_rack')
@@ -1675,13 +1833,31 @@ def register_routes(app):
         """Remove a device from a rack"""
         from flask import current_app
         with get_db_connection(current_app) as conn:
-            cursor = conn.cursor()
-            cursor.execute('DELETE FROM RackDevice WHERE id = %s AND rack_id = %s', (rack_device_id, rack_id))
-            if cursor.rowcount == 0:
+            cursor = conn.cursor(dictionary=True)
+            cursor.execute('''
+                SELECT rd.device_id, rd.nonnet_device_name, rd.position_u, rd.side,
+                       d.name AS device_name, r.name AS rack_name
+                FROM RackDevice rd
+                JOIN Rack r ON rd.rack_id = r.id
+                LEFT JOIN Device d ON rd.device_id = d.id
+                WHERE rd.id = %s AND rd.rack_id = %s
+            ''', (rack_device_id, rack_id))
+            rd = cursor.fetchone()
+            if not rd:
                 return jsonify({'error': 'Device not found in rack'}), 404
-            add_audit_log(request.api_user['id'], 'remove_device_from_rack', f"Removed device from rack {rack_id}", conn=conn)
+            if rd['device_id']:
+                device_label = rd['device_name'] or str(rd['device_id'])
+            else:
+                device_label = rd['nonnet_device_name']
+            cursor.execute('DELETE FROM RackDevice WHERE id = %s AND rack_id = %s', (rack_device_id, rack_id))
+            add_audit_log(
+                request.api_user['id'],
+                'rack_remove_device',
+                f"Removed device '{device_label}' from rack '{rd['rack_name']}' U{rd['position_u']} ({rd['side']})",
+                conn=conn
+            )
             conn.commit()
-        return jsonify({'message': 'Device removed from rack successfully'})
+        return jsonify({'message': 'Device removed from rack successfully', 'rack_device_id': rack_device_id})
     
     # Device Types API
     @app.route('/api/v1/device-types', methods=['GET'])
@@ -1712,22 +1888,80 @@ def register_routes(app):
     def api_configure_dhcp(subnet_id):
         """Configure DHCP pools for a subnet"""
         data = request.get_json()
-        if not data or 'pools' not in data:
-            return jsonify({'error': 'pools array is required'}), 400
+        if not data:
+            return jsonify({'error': 'Request body is required'}), 400
         
         from flask import current_app
         with get_db_connection(current_app) as conn:
             cursor = conn.cursor()
-            cursor.execute('DELETE FROM DHCPPool WHERE subnet_id = %s', (subnet_id,))
-            for pool in data['pools']:
-                if 'start_ip' not in pool or 'end_ip' not in pool:
-                    continue
-                excluded_ips = ','.join(pool.get('excluded_ips', []))
-                cursor.execute('INSERT INTO DHCPPool (subnet_id, start_ip, end_ip, excluded_ips) VALUES (%s, %s, %s, %s)',
-                              (subnet_id, pool['start_ip'], pool['end_ip'], excluded_ips))
-            add_audit_log(request.api_user['id'], 'configure_dhcp', f"Configured DHCP for subnet {subnet_id}", subnet_id, conn=conn)
+            cursor.execute('SELECT name, cidr FROM Subnet WHERE id = %s', (subnet_id,))
+            subnet = cursor.fetchone()
+            if not subnet:
+                return jsonify({'error': 'Subnet not found'}), 404
+            subnet_name, subnet_cidr = subnet
+            
+            if data.get('remove'):
+                cursor.execute('DELETE FROM DHCPPool WHERE subnet_id = %s', (subnet_id,))
+                cursor.execute('UPDATE IPAddress SET hostname = NULL WHERE subnet_id = %s AND hostname = %s', (subnet_id, 'DHCP'))
+                add_audit_log(
+                    request.api_user['id'],
+                    'dhcp_pool_remove',
+                    f"Removed DHCP pool for subnet {subnet_name} ({subnet_cidr})",
+                    subnet_id,
+                    conn=conn
+                )
+                conn.commit()
+                return jsonify({'message': 'DHCP pool removed successfully'})
+            
+            pools = data.get('pools')
+            if not pools or not isinstance(pools, list):
+                return jsonify({'error': 'pools array is required'}), 400
+            pool = pools[0]
+            start_ip = pool.get('start_ip')
+            end_ip = pool.get('end_ip')
+            if not start_ip or not end_ip:
+                return jsonify({'error': 'start_ip and end_ip are required'}), 400
+            excluded_ips = pool.get('excluded_ips', [])
+            if not isinstance(excluded_ips, list):
+                return jsonify({'error': 'excluded_ips must be a list of IP strings'}), 400
+            excluded_list = [ip.strip() for ip in excluded_ips if ip.strip()]
+            excluded_str = ','.join(excluded_list)
+            
+            cursor.execute('SELECT ip FROM IPAddress WHERE subnet_id = %s ORDER BY ip', (subnet_id,))
+            all_ips = [row[0] for row in cursor.fetchall()]
+            if start_ip not in all_ips or end_ip not in all_ips:
+                return jsonify({'error': 'start_ip and end_ip must be addresses within the subnet'}), 400
+            
+            cursor.execute('SELECT id FROM DHCPPool WHERE subnet_id = %s', (subnet_id,))
+            existing = cursor.fetchone()
+            cursor.execute('UPDATE IPAddress SET hostname = NULL WHERE subnet_id = %s AND hostname = %s', (subnet_id, 'DHCP'))
+            if existing:
+                cursor.execute(
+                    'UPDATE DHCPPool SET start_ip = %s, end_ip = %s, excluded_ips = %s WHERE subnet_id = %s',
+                    (start_ip, end_ip, excluded_str, subnet_id)
+                )
+                action = 'dhcp_pool_update'
+                details = f"Updated DHCP pool for subnet {subnet_name} ({subnet_cidr}): {start_ip} - {end_ip}, excluded: {excluded_str}"
+            else:
+                cursor.execute(
+                    'INSERT INTO DHCPPool (subnet_id, start_ip, end_ip, excluded_ips) VALUES (%s, %s, %s, %s)',
+                    (subnet_id, start_ip, end_ip, excluded_str)
+                )
+                action = 'dhcp_pool_create'
+                details = f"Created DHCP pool for subnet {subnet_name} ({subnet_cidr}): {start_ip} - {end_ip}, excluded: {excluded_str}"
+            
+            in_range = False
+            for candidate_ip in all_ips:
+                if candidate_ip == start_ip:
+                    in_range = True
+                if in_range and candidate_ip not in excluded_list:
+                    cursor.execute('UPDATE IPAddress SET hostname = %s WHERE subnet_id = %s AND ip = %s', ('DHCP', subnet_id, candidate_ip))
+                if candidate_ip == end_ip:
+                    break
+            
+            add_audit_log(request.api_user['id'], action, details, subnet_id, conn=conn)
             conn.commit()
-        return jsonify({'message': 'DHCP pools configured successfully'})
+        return jsonify({'message': 'DHCP pools configured successfully', 'pool': {'start_ip': start_ip, 'end_ip': end_ip, 'excluded_ips': excluded_list}})
     
     # Audit Log API
     @app.route('/api/v1/audit', methods=['GET'])
