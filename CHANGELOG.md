@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.5.0](https://github.com/JDB-NET/ipam/compare/v1.4.2...v1.5.0) (2025-11-21)
+
+
+### Features
+
+* :sparkles: device tags ([ad1e576](https://github.com/JDB-NET/ipam/commit/ad1e576da42bf90c59347f7f7a4cce13c6842204))
+
 ## [1.4.2](https://github.com/JDB-NET/ipam/compare/v1.4.1...v1.4.2) (2025-11-08)
 
 
