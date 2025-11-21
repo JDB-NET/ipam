@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>API Documentation - IPAM</title>
+    <link rel="icon" type="image/png" href="{{ LOGO_PNG }}">
+    <link href="/static/css/output.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css" rel="stylesheet">
+    <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
+</head>
+<body class="bg-gray-300 text-gray-900 dark:bg-zinc-900 dark:text-gray-100 min-h-screen flex flex-col">
+    {% include 'header.html' %}
+    <div class="flex-1 mx-4 py-8 pt-20">
+        <div class="container max-w-7xl mx-auto">
+            <h1 class="text-3xl font-bold mb-8 text-center">API Documentation</h1>
+            
+            <!-- Authentication Section -->
+            <div class="bg-gray-200 dark:bg-zinc-800 rounded-2xl shadow-lg p-8 mb-8">
+                <h2 class="text-2xl font-semibold mb-4 border-b border-gray-300 dark:border-zinc-600 pb-2">Authentication</h2>
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    <div>
+                        <p class="mb-4">All API requests require authentication using an API key. You can provide the API key in one of three ways:</p>
+                        <ul class="list-disc list-inside space-y-2 ml-4">
+                            <li><strong>Header:</strong> <code class="bg-gray-300 dark:bg-zinc-700 px-2 py-1 rounded text-sm">X-API-Key: your_api_key</code></li>
+                            <li><strong>Authorization Header:</strong> <code class="bg-gray-300 dark:bg-zinc-700 px-2 py-1 rounded text-sm">Authorization: Bearer your_api_key</code></li>
+                            <li><strong>Query Parameter:</strong> <code class="bg-gray-300 dark:bg-zinc-700 px-2 py-1 rounded text-sm">?api_key=your_api_key</code></li>
+                        </ul>
+                        <p class="mt-4"><strong>Base URL:</strong> <code class="bg-gray-300 dark:bg-zinc-700 px-2 py-1 rounded text-sm">/api/v1</code></p>
+                    </div>
+                    <div class="bg-gray-300 dark:bg-zinc-700 rounded-lg p-4">
+                        <h3 class="font-semibold mb-2">Your API Key</h3>
+                        <div class="flex items-center space-x-2">
+                            <input type="text" id="apiKey" value="{{ api_key or '' }}" readonly
+                                   class="flex-1 px-3 py-2 bg-gray-100 dark:bg-zinc-600 border border-gray-400 dark:border-zinc-500 rounded text-sm font-mono" 
+                                   placeholder="API key not found">
+                            <button onclick="testConnection()" class="px-4 py-2 bg-gray-500 hover:bg-gray-600 dark:bg-zinc-600 dark:hover:bg-zinc-500 text-white rounded text-sm transition-colors">
+                                <i class="fas fa-plug mr-2"></i>Test
+                            </button>
+                        </div>
+                        <div id="connectionStatus" class="mt-2 text-sm"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Interactive Endpoints -->
+            <div class="bg-gray-200 dark:bg-zinc-800 rounded-2xl shadow-lg p-8 mb-8">
+                <h2 class="text-2xl font-semibold mb-4 border-b border-gray-300 dark:border-zinc-600 pb-2">
+                    <i class="fas fa-play-circle mr-2"></i>Interactive Testing
+                </h2>
+                <p class="text-gray-600 dark:text-gray-300 mb-6">Test GET endpoints directly in your browser. Other methods are documented below.</p>
+                
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    <!-- GET /devices -->
+                    <div class="bg-gray-300 dark:bg-zinc-700 rounded-lg p-4">
+                        <div class="flex items-center justify-between mb-2">
+                            <div class="flex items-center space-x-2">
+                                <span class="px-2 py-1 bg-green-600 text-white rounded text-xs font-mono">GET</span>
+                                <code class="text-sm">/api/v1/devices</code>
+                            </div>
+                            <button onclick="tryEndpoint('GET', '/api/v1/devices', null, 'devices-list')" 
+                                    class="px-3 py-1 bg-gray-500 hover:bg-gray-600 dark:bg-zinc-600 dark:hover:bg-zinc-500 text-white rounded text-xs transition-colors">
+                                <i class="fas fa-play mr-1"></i>Try
+                            </button>
+                        </div>
+                        <p class="text-xs text-gray-600 dark:text-gray-300 mb-2">List all devices</p>
+                        <div id="devices-list-response" class="hidden">
+                            <pre class="bg-gray-100 dark:bg-zinc-600 p-2 rounded text-xs overflow-x-auto max-h-32" id="devices-list"></pre>
+                        </div>
+                    </div>
+
+                    <!-- GET /devices/{id} -->
+                    <div class="bg-gray-300 dark:bg-zinc-700 rounded-lg p-4">
+                        <div class="flex items-center justify-between mb-2">
+                            <div class="flex items-center space-x-2">
+                                <span class="px-2 py-1 bg-green-600 text-white rounded text-xs font-mono">GET</span>
+                                <code class="text-sm">/api/v1/devices/{id}</code>
+                            </div>
+                            <div class="flex items-center space-x-1">
+                                <input type="number" id="device-id" placeholder="ID" class="px-2 py-1 border rounded text-xs w-16">
+                                <button onclick="tryEndpointWithId('GET', '/api/v1/devices/', 'device-id', 'device-detail')" 
+                                        class="px-3 py-1 bg-gray-500 hover:bg-gray-600 dark:bg-zinc-600 dark:hover:bg-zinc-500 text-white rounded text-xs transition-colors">
+                                    <i class="fas fa-play mr-1"></i>Try
+                                </button>
+                            </div>
+                        </div>
+                        <p class="text-xs text-gray-600 dark:text-gray-300 mb-2">Get device by ID</p>
+                        <div id="device-detail-response" class="hidden">
+                            <pre class="bg-gray-100 dark:bg-zinc-600 p-2 rounded text-xs overflow-x-auto max-h-32" id="device-detail"></pre>
+                        </div>
+                    </div>
+
+                    <!-- GET /devices/by-tag/{tag} -->
+                    <div class="bg-gray-300 dark:bg-zinc-700 rounded-lg p-4">
+                        <div class="flex items-center justify-between mb-2">
+                            <div class="flex items-center space-x-2">
+                                <span class="px-2 py-1 bg-green-600 text-white rounded text-xs font-mono">GET</span>
+                                <code class="text-sm">/api/v1/devices/by-tag/{tag}</code>
+                            </div>
+                            <div class="flex items-center space-x-1">
+                                <input type="text" id="tag-name" placeholder="Tag" class="px-2 py-1 border rounded text-xs w-20">
+                                <button onclick="tryEndpointWithId('GET', '/api/v1/devices/by-tag/', 'tag-name', 'devices-by-tag')" 
+                                        class="px-3 py-1 bg-gray-500 hover:bg-gray-600 dark:bg-zinc-600 dark:hover:bg-zinc-500 text-white rounded text-xs transition-colors">
+                                    <i class="fas fa-play mr-1"></i>Try
+                                </button>
+                            </div>
+                        </div>
+                        <p class="text-xs text-gray-600 dark:text-gray-300 mb-2">Filter devices by tag</p>
+                        <div id="devices-by-tag-response" class="hidden">
+                            <pre class="bg-gray-100 dark:bg-zinc-600 p-2 rounded text-xs overflow-x-auto max-h-32" id="devices-by-tag"></pre>
+                        </div>
+                    </div>
+
+                    <!-- GET /tags -->
+                    <div class="bg-gray-300 dark:bg-zinc-700 rounded-lg p-4">
+                        <div class="flex items-center justify-between mb-2">
+                            <div class="flex items-center space-x-2">
+                                <span class="px-2 py-1 bg-green-600 text-white rounded text-xs font-mono">GET</span>
+                                <code class="text-sm">/api/v1/tags</code>
+                            </div>
+                            <button onclick="tryEndpoint('GET', '/api/v1/tags', null, 'tags-list')" 
+                                    class="px-3 py-1 bg-gray-500 hover:bg-gray-600 dark:bg-zinc-600 dark:hover:bg-zinc-500 text-white rounded text-xs transition-colors">
+                                <i class="fas fa-play mr-1"></i>Try
+                            </button>
+                        </div>
+                        <p class="text-xs text-gray-600 dark:text-gray-300 mb-2">List all tags</p>
+                        <div id="tags-list-response" class="hidden">
+                            <pre class="bg-gray-100 dark:bg-zinc-600 p-2 rounded text-xs overflow-x-auto max-h-32" id="tags-list"></pre>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Complete API Documentation -->
+            <div class="space-y-6">
+                <!-- Devices Section -->
+                <div class="bg-gray-200 dark:bg-zinc-800 rounded-2xl shadow-lg p-8">
+                    <h2 class="text-2xl font-semibold mb-4 border-b border-gray-300 dark:border-zinc-600 pb-2">
+                        <i class="fas fa-server mr-2"></i>Devices
+                    </h2>
+                    <div class="space-y-4">
+                        <div class="bg-gray-300 dark:bg-zinc-700 rounded-lg p-4">
+                            <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                                <div>
+                                    <h4 class="font-semibold mb-2">Read Operations</h4>
+                                    <ul class="list-disc list-inside space-y-1 text-sm">
+                                        <li><code class="bg-gray-400 dark:bg-zinc-600 px-2 py-1 rounded text-xs">GET /api/v1/devices</code> - List all devices</li>
+                                        <li><code class="bg-gray-400 dark:bg-zinc-600 px-2 py-1 rounded text-xs">GET /api/v1/devices/{id}</code> - Get device details</li>
+                                        <li><code class="bg-gray-400 dark:bg-zinc-600 px-2 py-1 rounded text-xs">GET /api/v1/devices/by-tag/{tag}</code> - Get devices by tag</li>
+                                    </ul>
+                                </div>
+                                <div>
+                                    <h4 class="font-semibold mb-2">Write Operations</h4>
+                                    <ul class="list-disc list-inside space-y-1 text-sm">
+                                        <li><code class="bg-orange-200 dark:bg-orange-800 px-2 py-1 rounded text-xs">POST /api/v1/devices</code> - Create device</li>
+                                        <li><code class="bg-blue-200 dark:bg-blue-800 px-2 py-1 rounded text-xs">PUT /api/v1/devices/{id}</code> - Update device</li>
+                                        <li><code class="bg-red-200 dark:bg-red-800 px-2 py-1 rounded text-xs">DELETE /api/v1/devices/{id}</code> - Delete device</li>
+                                        <li><code class="bg-orange-200 dark:bg-orange-800 px-2 py-1 rounded text-xs">POST /api/v1/devices/{id}/ips</code> - Add IP to device</li>
+                                        <li><code class="bg-red-200 dark:bg-red-800 px-2 py-1 rounded text-xs">DELETE /api/v1/devices/{id}/ips/{ip_id}</code> - Remove IP</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Subnets Section -->
+                <div class="bg-gray-200 dark:bg-zinc-800 rounded-2xl shadow-lg p-8">
+                    <h2 class="text-2xl font-semibold mb-4 border-b border-gray-300 dark:border-zinc-600 pb-2">
+                        <i class="fas fa-network-wired mr-2"></i>Subnets
+                    </h2>
+                    <div class="space-y-4">
+                        <div class="bg-gray-300 dark:bg-zinc-700 rounded-lg p-4">
+                            <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                                <div>
+                                    <h4 class="font-semibold mb-2">Read Operations</h4>
+                                    <ul class="list-disc list-inside space-y-1 text-sm">
+                                        <li><code class="bg-gray-400 dark:bg-zinc-600 px-2 py-1 rounded text-xs">GET /api/v1/subnets</code> - List all subnets</li>
+                                        <li><code class="bg-gray-400 dark:bg-zinc-600 px-2 py-1 rounded text-xs">GET /api/v1/subnets/{id}</code> - Get subnet details</li>
+                                    </ul>
+                                </div>
+                                <div>
+                                    <h4 class="font-semibold mb-2">Write Operations</h4>
+                                    <ul class="list-disc list-inside space-y-1 text-sm">
+                                        <li><code class="bg-orange-200 dark:bg-orange-800 px-2 py-1 rounded text-xs">POST /api/v1/subnets</code> - Create subnet</li>
+                                        <li><code class="bg-blue-200 dark:bg-blue-800 px-2 py-1 rounded text-xs">PUT /api/v1/subnets/{id}</code> - Update subnet</li>
+                                        <li><code class="bg-red-200 dark:bg-red-800 px-2 py-1 rounded text-xs">DELETE /api/v1/subnets/{id}</code> - Delete subnet</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Racks Section -->
+                <div class="bg-gray-200 dark:bg-zinc-800 rounded-2xl shadow-lg p-8">
+                    <h2 class="text-2xl font-semibold mb-4 border-b border-gray-300 dark:border-zinc-600 pb-2">
+                        <i class="fas fa-building mr-2"></i>Racks
+                    </h2>
+                    <div class="space-y-4">
+                        <div class="bg-gray-300 dark:bg-zinc-700 rounded-lg p-4">
+                            <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                                <div>
+                                    <h4 class="font-semibold mb-2">Read Operations</h4>
+                                    <ul class="list-disc list-inside space-y-1 text-sm">
+                                        <li><code class="bg-gray-400 dark:bg-zinc-600 px-2 py-1 rounded text-xs">GET /api/v1/racks</code> - List all racks</li>
+                                        <li><code class="bg-gray-400 dark:bg-zinc-600 px-2 py-1 rounded text-xs">GET /api/v1/racks/{id}</code> - Get rack details</li>
+                                    </ul>
+                                </div>
+                                <div>
+                                    <h4 class="font-semibold mb-2">Write Operations</h4>
+                                    <ul class="list-disc list-inside space-y-1 text-sm">
+                                        <li><code class="bg-orange-200 dark:bg-orange-800 px-2 py-1 rounded text-xs">POST /api/v1/racks</code> - Create rack</li>
+                                        <li><code class="bg-red-200 dark:bg-red-800 px-2 py-1 rounded text-xs">DELETE /api/v1/racks/{id}</code> - Delete rack</li>
+                                        <li><code class="bg-orange-200 dark:bg-orange-800 px-2 py-1 rounded text-xs">POST /api/v1/racks/{id}/devices</code> - Add device to rack</li>
+                                        <li><code class="bg-red-200 dark:bg-red-800 px-2 py-1 rounded text-xs">DELETE /api/v1/racks/{id}/devices/{device_id}</code> - Remove device</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tags Section -->
+                <div class="bg-gray-200 dark:bg-zinc-800 rounded-2xl shadow-lg p-8">
+                    <h2 class="text-2xl font-semibold mb-4 border-b border-gray-300 dark:border-zinc-600 pb-2">
+                        <i class="fas fa-tags mr-2"></i>Tags
+                    </h2>
+                    <div class="space-y-4">
+                        <div class="bg-gray-300 dark:bg-zinc-700 rounded-lg p-4">
+                            <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                                <div>
+                                    <h4 class="font-semibold mb-2">Read Operations</h4>
+                                    <ul class="list-disc list-inside space-y-1 text-sm">
+                                        <li><code class="bg-gray-400 dark:bg-zinc-600 px-2 py-1 rounded text-xs">GET /api/v1/tags</code> - List all tags</li>
+                                        <li><code class="bg-gray-400 dark:bg-zinc-600 px-2 py-1 rounded text-xs">GET /api/v1/tags?format=simple</code> - List tags in simple format</li>
+                                        <li><code class="bg-gray-400 dark:bg-zinc-600 px-2 py-1 rounded text-xs">GET /api/v1/tags/{id}</code> - Get tag details</li>
+                                        <li><code class="bg-gray-400 dark:bg-zinc-600 px-2 py-1 rounded text-xs">GET /api/v1/devices/{id}/tags</code> - Get device tags</li>
+                                    </ul>
+                                </div>
+                                <div>
+                                    <h4 class="font-semibold mb-2">Write Operations</h4>
+                                    <ul class="list-disc list-inside space-y-1 text-sm">
+                                        <li><code class="bg-orange-200 dark:bg-orange-800 px-2 py-1 rounded text-xs">POST /api/v1/tags</code> - Create tag</li>
+                                        <li><code class="bg-blue-200 dark:bg-blue-800 px-2 py-1 rounded text-xs">PUT /api/v1/tags/{id}</code> - Update tag</li>
+                                        <li><code class="bg-red-200 dark:bg-red-800 px-2 py-1 rounded text-xs">DELETE /api/v1/tags/{id}</code> - Delete tag</li>
+                                        <li><code class="bg-orange-200 dark:bg-orange-800 px-2 py-1 rounded text-xs">POST /api/v1/devices/{id}/tags</code> - Assign tag to device</li>
+                                        <li><code class="bg-red-200 dark:bg-red-800 px-2 py-1 rounded text-xs">DELETE /api/v1/devices/{id}/tags/{tag_id}</code> - Remove tag</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Additional Endpoints -->
+                <div class="bg-gray-200 dark:bg-zinc-800 rounded-2xl shadow-lg p-8">
+                    <h2 class="text-2xl font-semibold mb-4 border-b border-gray-300 dark:border-zinc-600 pb-2">
+                        <i class="fas fa-cogs mr-2"></i>Additional Endpoints
+                    </h2>
+                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                        <div class="bg-gray-300 dark:bg-zinc-700 rounded-lg p-4">
+                            <h4 class="font-semibold mb-3"><i class="fas fa-info-circle mr-2"></i>System Information</h4>
+                            <ul class="list-disc list-inside space-y-1 text-sm">
+                                <li><code class="bg-gray-400 dark:bg-zinc-600 px-2 py-1 rounded text-xs">GET /api/v1/info</code> - System information</li>
+                                <li><code class="bg-gray-400 dark:bg-zinc-600 px-2 py-1 rounded text-xs">GET /api/v1/device-types</code> - List device types</li>
+                            </ul>
+                        </div>
+                        <div class="bg-gray-300 dark:bg-zinc-700 rounded-lg p-4">
+                            <h4 class="font-semibold mb-3"><i class="fas fa-dharmachakra mr-2"></i>DHCP Management</h4>
+                            <ul class="list-disc list-inside space-y-1 text-sm">
+                                <li><code class="bg-gray-400 dark:bg-zinc-600 px-2 py-1 rounded text-xs">GET /api/v1/subnets/{id}/dhcp</code> - Get DHCP config</li>
+                                <li><code class="bg-orange-200 dark:bg-orange-800 px-2 py-1 rounded text-xs">POST /api/v1/subnets/{id}/dhcp</code> - Generate DHCP config</li>
+                            </ul>
+                        </div>
+                        <div class="bg-gray-300 dark:bg-zinc-700 rounded-lg p-4">
+                            <h4 class="font-semibold mb-3"><i class="fas fa-users mr-2"></i>User & Role Management</h4>
+                            <ul class="list-disc list-inside space-y-1 text-sm">
+                                <li><code class="bg-gray-400 dark:bg-zinc-600 px-2 py-1 rounded text-xs">GET /api/v1/users</code> - List users</li>
+                                <li><code class="bg-gray-400 dark:bg-zinc-600 px-2 py-1 rounded text-xs">GET /api/v1/roles</code> - List roles</li>
+                            </ul>
+                        </div>
+                        <div class="bg-gray-300 dark:bg-zinc-700 rounded-lg p-4">
+                            <h4 class="font-semibold mb-3"><i class="fas fa-clipboard-list mr-2"></i>Audit Log</h4>
+                            <ul class="list-disc list-inside space-y-1 text-sm">
+                                <li><code class="bg-gray-400 dark:bg-zinc-600 px-2 py-1 rounded text-xs">GET /api/v1/audit</code> - List audit entries</li>
+                            </ul>
+                            <p class="text-xs text-gray-600 dark:text-gray-400 mt-2">Supports filtering with query parameters</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Response Format & Permissions -->
+                <div class="bg-gray-200 dark:bg-zinc-800 rounded-2xl shadow-lg p-8">
+                    <h2 class="text-2xl font-semibold mb-4 border-b border-gray-300 dark:border-zinc-600 pb-2">
+                        <i class="fas fa-info-circle mr-2"></i>Response Format & Permissions
+                    </h2>
+                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                        <div class="bg-gray-300 dark:bg-zinc-700 rounded-lg p-4">
+                            <h3 class="text-lg font-semibold mb-3">Success Responses</h3>
+                            <p class="mb-3 text-sm">All API responses are in JSON format. Successful requests return:</p>
+                            <ul class="list-disc list-inside space-y-1 text-sm">
+                                <li><code class="bg-green-200 dark:bg-green-800 px-2 py-1 rounded text-xs">200 OK</code> - Request successful</li>
+                                <li><code class="bg-green-200 dark:bg-green-800 px-2 py-1 rounded text-xs">201 Created</code> - Resource created</li>
+                                <li><code class="bg-green-200 dark:bg-green-800 px-2 py-1 rounded text-xs">204 No Content</code> - Success with no response body</li>
+                            </ul>
+                        </div>
+                        <div class="bg-gray-300 dark:bg-zinc-700 rounded-lg p-4">
+                            <h3 class="text-lg font-semibold mb-3">Error Responses</h3>
+                            <p class="mb-3 text-sm">Error responses include descriptive messages:</p>
+                            <ul class="list-disc list-inside space-y-1 text-sm">
+                                <li><code class="bg-red-200 dark:bg-red-800 px-2 py-1 rounded text-xs">400 Bad Request</code> - Invalid request data</li>
+                                <li><code class="bg-red-200 dark:bg-red-800 px-2 py-1 rounded text-xs">401 Unauthorized</code> - Missing or invalid API key</li>
+                                <li><code class="bg-red-200 dark:bg-red-800 px-2 py-1 rounded text-xs">403 Forbidden</code> - Insufficient permissions</li>
+                                <li><code class="bg-red-200 dark:bg-red-800 px-2 py-1 rounded text-xs">404 Not Found</code> - Resource not found</li>
+                            </ul>
+                        </div>
+                    </div>
+                    <div class="mt-6 bg-gray-300 dark:bg-zinc-700 rounded-lg p-4">
+                        <h3 class="text-lg font-semibold mb-3"><i class="fas fa-shield-alt mr-2"></i>Permissions</h3>
+                        <p class="text-sm">API endpoints respect the same role-based permissions as the web interface. Users can only perform actions that their role allows. If a user lacks the required permission, the API will return a <code class="bg-red-200 dark:bg-red-800 px-2 py-1 rounded text-xs">403 Forbidden</code> error with details about the missing permission.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/js/api_docs.js"></script>
+</body>
+</html>

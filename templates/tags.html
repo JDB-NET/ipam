@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tag Management</title>
+    <link rel="icon" type="image/png" href="{{ LOGO_PNG }}">
+    <link href="/static/css/output.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css" rel="stylesheet">
+</head>
+<body class="bg-gray-300 text-gray-900 dark:bg-zinc-900 dark:text-gray-100 min-h-screen flex flex-col">
+    {% include 'header.html' %}
+    <div class="flex-1 mx-4 py-8 pt-20">
+        <div class="container max-w-7xl mx-auto">
+            <div class="flex items-center justify-between mb-6">
+                <h1 class="text-3xl font-bold">Tag Management</h1>
+                {% if can_add_tag %}
+                <button onclick="showAddTagModal()" class="bg-gray-200 hover:bg-gray-400 dark:bg-zinc-700 dark:hover:bg-zinc-600 hover:cursor-pointer px-6 py-2 rounded-lg font-medium">
+                    <i class="fas fa-plus mr-2"></i>Add Tag
+                </button>
+                {% endif %}
+            </div>
+            
+            {% if error %}
+            <div class="bg-red-200 dark:bg-red-800 text-red-800 dark:text-red-200 p-4 rounded-lg mb-6">
+                {{ error }}
+            </div>
+            {% endif %}
+            
+            {% if tags %}
+            <div class="bg-gray-200 dark:bg-zinc-800 p-6 rounded-lg shadow-md">
+                <div class="overflow-x-auto">
+                    <table class="w-full">
+                        <thead>
+                            <tr class="border-b border-gray-600">
+                                <th class="text-left p-3">Name</th>
+                                <th class="text-left p-3">Colour</th>
+                                <th class="text-left p-3">Description</th>
+                                <th class="text-center p-3">Devices</th>
+                                <th class="text-center p-3">Created</th>
+                                <th class="text-center p-3">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for tag in tags %}
+                            <tr class="border-b border-gray-600 hover:bg-gray-300 dark:hover:bg-zinc-700">
+                                <td class="p-3">
+                                    <div class="flex items-center space-x-2">
+                                        <div class="w-4 h-4 rounded-full border border-gray-600" style="background-color: {{ tag.color }}"></div>
+                                        <span class="font-medium">{{ tag.name }}</span>
+                                    </div>
+                                </td>
+                                <td class="p-3">
+                                    <span class="font-mono text-sm">{{ tag.color }}</span>
+                                </td>
+                                <td class="p-3">
+                                    <span class="text-sm">{{ tag.description or '-' }}</span>
+                                </td>
+                                <td class="p-3 text-center">
+                                    {% if tag.device_count > 0 %}
+                                        <a href="/api/v1/devices/by-tag/{{ tag.name }}" class="text-blue-400 hover:text-blue-600">
+                                            {{ tag.device_count }}
+                                        </a>
+                                    {% else %}
+                                        <span class="text-gray-500">0</span>
+                                    {% endif %}
+                                </td>
+                                <td class="p-3 text-center text-sm">
+                                    {{ tag.created_at.strftime('%Y-%m-%d') if tag.created_at else '-' }}
+                                </td>
+                                <td class="p-3 text-center">
+                                    <div class="flex items-center justify-center space-x-2">
+                                        {% if can_edit_tag %}
+                                        <button class="edit-tag-btn text-gray-900 hover:text-gray-600 dark:text-gray-100 dark:hover:text-gray-300 hover:cursor-pointer" 
+                                                title="Edit Tag"
+                                                data-tag-id="{{ tag.id }}"
+                                                data-tag-name="{{ tag.name }}"
+                                                data-tag-color="{{ tag.color }}"
+                                                data-tag-description="{{ tag.description or '' }}">
+                                            <i class="fas fa-edit"></i>
+                                        </button>
+                                        {% endif %}
+                                        {% if can_delete_tag %}
+                                        <form action="/tags" method="POST" onsubmit="return confirm('Are you sure you want to delete this tag? This will remove it from all devices.');" class="inline">
+                                            <input type="hidden" name="action" value="delete_tag">
+                                            <input type="hidden" name="tag_id" value="{{ tag.id }}">
+                                            <button type="submit" class="text-gray-900 hover:text-gray-600 dark:text-gray-100 dark:hover:text-gray-300 hover:cursor-pointer" title="Delete Tag">
+                                                <i class="fas fa-trash"></i>
+                                            </button>
+                                        </form>
+                                        {% endif %}
+                                    </div>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            {% else %}
+            <div class="bg-gray-200 dark:bg-zinc-800 p-6 rounded-lg shadow-md">
+                <div class="text-center py-8 text-gray-500">
+                    <i class="fas fa-tags text-4xl mb-4"></i>
+                    <p>No tags found. Add your first tag to get started.</p>
+                </div>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+    
+    <!-- Add Tag Modal -->
+    <div id="add-tag-modal" class="hidden fixed inset-0 bg-black/30 backdrop-blur-md flex items-center justify-center z-50">
+        <div class="bg-gray-200 dark:bg-zinc-800 p-6 rounded-lg shadow-lg max-w-md w-full mx-4">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-xl font-bold">Add New Tag</h2>
+                <button onclick="closeAddTagModal()" class="text-gray-500 hover:text-gray-700">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <form action="/tags" method="POST">
+                <input type="hidden" name="action" value="add_tag">
+                <div class="space-y-4">
+                    <input type="text" name="name" id="add-tag-name" placeholder="Tag Name" 
+                           class="border p-3 rounded-lg bg-gray-300 text-gray-900 dark:bg-zinc-900 dark:text-gray-100 border-gray-600 w-full" required>
+                    <div class="flex items-center space-x-2">
+                        <label class="text-sm font-medium">Colour:</label>
+                        <input type="color" name="color" id="add-tag-color" value="#6B7280" 
+                               class="w-12 h-10 border border-gray-600 rounded cursor-pointer">
+                        <span id="add-color-preview" class="text-sm font-mono">#6B7280</span>
+                    </div>
+                    <textarea name="description" id="add-tag-description" placeholder="Description (optional)" rows="3"
+                              class="border p-3 rounded-lg bg-gray-300 text-gray-900 dark:bg-zinc-900 dark:text-gray-100 border-gray-600 w-full resize-y"></textarea>
+                </div>
+                <div class="flex justify-end space-x-2 mt-6">
+                    <button type="button" onclick="closeAddTagModal()" 
+                            class="px-4 py-2 bg-gray-300 hover:bg-gray-400 dark:bg-zinc-700 dark:hover:bg-zinc-600 hover:cursor-pointer rounded-lg">Cancel</button>
+                    <button type="submit" 
+                            class="px-4 py-2 bg-gray-300 hover:bg-gray-400 dark:bg-zinc-700 dark:hover:bg-zinc-600 hover:cursor-pointer rounded-lg">Add Tag</button>
+                </div>
+            </form>
+        </div>
+    </div>
+    
+    <!-- Edit Tag Modal -->
+    <div id="edit-tag-modal" class="hidden fixed inset-0 bg-black/30 backdrop-blur-md flex items-center justify-center z-50">
+        <div class="bg-gray-200 dark:bg-zinc-800 p-6 rounded-lg shadow-lg max-w-md w-full mx-4">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-xl font-bold">Edit Tag</h2>
+                <button onclick="closeEditTagModal()" class="text-gray-500 hover:text-gray-700">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <form action="/tags" method="POST">
+                <input type="hidden" name="action" value="edit_tag">
+                <input type="hidden" name="tag_id" id="edit-tag-id">
+                <div class="space-y-4">
+                    <input type="text" name="name" id="edit-tag-name" placeholder="Tag Name" 
+                           class="border p-3 rounded-lg bg-gray-300 text-gray-900 dark:bg-zinc-900 dark:text-gray-100 border-gray-600 w-full" required>
+                    <div class="flex items-center space-x-2">
+                        <label class="text-sm font-medium">Colour:</label>
+                        <input type="color" name="color" id="edit-tag-color" 
+                               class="w-12 h-10 border border-gray-600 rounded cursor-pointer">
+                        <span id="edit-color-preview" class="text-sm font-mono"></span>
+                    </div>
+                    <textarea name="description" id="edit-tag-description" placeholder="Description (optional)" rows="3"
+                              class="border p-3 rounded-lg bg-gray-300 text-gray-900 dark:bg-zinc-900 dark:text-gray-100 border-gray-600 w-full resize-y"></textarea>
+                </div>
+                <div class="flex justify-end space-x-2 mt-6">
+                    <button type="button" onclick="closeEditTagModal()" 
+                            class="px-4 py-2 bg-gray-200 hover:bg-gray-400 dark:bg-zinc-700 dark:hover:bg-zinc-600 hover:cursor-pointer rounded-lg">Cancel</button>
+                    <button type="submit" 
+                            class="px-4 py-2 bg-gray-200 hover:bg-gray-400 dark:bg-zinc-700 dark:hover:bg-zinc-600 hover:cursor-pointer rounded-lg">Save Changes</button>
+                </div>
+            </form>
+        </div>
+    </div>
+    
+    <script src="/static/js/tags.js"></script>
+</body>
+</html>

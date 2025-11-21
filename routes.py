@@ -188,16 +188,50 @@ def register_routes(app):
     @permission_required('view_devices')
     def devices():
         from flask import current_app
+        tag_filter = request.args.get('tag')
+        
         with get_db_connection(current_app) as conn:
             cursor = conn.cursor()
-            cursor.execute('''SELECT Device.id, Device.name, DeviceType.icon_class FROM Device LEFT JOIN DeviceType ON Device.device_type_id = DeviceType.id''')
+            
+            # Base device query
+            if tag_filter:
+                cursor.execute('''
+                    SELECT DISTINCT d.id, d.name, dt.icon_class 
+                    FROM Device d 
+                    LEFT JOIN DeviceType dt ON d.device_type_id = dt.id
+                    JOIN DeviceTag dtag ON d.id = dtag.device_id
+                    JOIN Tag t ON dtag.tag_id = t.id
+                    WHERE t.name = %s
+                    ORDER BY d.name
+                ''', (tag_filter,))
+            else:
+                cursor.execute('''SELECT Device.id, Device.name, DeviceType.icon_class FROM Device LEFT JOIN DeviceType ON Device.device_type_id = DeviceType.id ORDER BY Device.name''')
+            
             devices = cursor.fetchall()
+            
             cursor.execute('SELECT id, name, cidr, site FROM Subnet')
             subnets = cursor.fetchall()
             cursor.execute('SELECT DeviceIPAddress.device_id, IPAddress.id, IPAddress.ip FROM DeviceIPAddress JOIN IPAddress ON DeviceIPAddress.ip_id = IPAddress.id')
             device_ips = {}
             for row in cursor.fetchall():
                 device_ips.setdefault(row[0], []).append((row[1], row[2]))
+            
+            # Get tags for each device
+            device_tags = {}
+            for device in devices:
+                cursor.execute('''
+                    SELECT t.id, t.name, t.color
+                    FROM DeviceTag dt
+                    JOIN Tag t ON dt.tag_id = t.id
+                    WHERE dt.device_id = %s
+                    ORDER BY t.name
+                ''', (device[0],))
+                device_tags[device[0]] = [{'id': row[0], 'name': row[1], 'color': row[2]} for row in cursor.fetchall()]
+            
+            # Get all available tags for filtering
+            cursor.execute('SELECT DISTINCT name FROM Tag ORDER BY name')
+            all_tag_names = [row[0] for row in cursor.fetchall()]
+            
             sites_devices = {}
             for device in devices:
                 cursor.execute('''SELECT Subnet.site FROM DeviceIPAddress JOIN IPAddress ON DeviceIPAddress.ip_id = IPAddress.id JOIN Subnet ON IPAddress.subnet_id = Subnet.id WHERE DeviceIPAddress.device_id = %s LIMIT 1''', (device[0],))
@@ -206,7 +240,10 @@ def register_routes(app):
                 if site not in sites_devices:
                     sites_devices[site] = []
                 sites_devices[site].append({'id': device[0], 'name': device[1], 'icon_class': device[2]})
-        return render_with_user('devices.html', sites_devices=sites_devices, device_ips=device_ips)
+        
+        return render_with_user('devices.html', sites_devices=sites_devices, device_ips=device_ips, 
+                               device_tags=device_tags, all_tag_names=all_tag_names, 
+                               current_tag_filter=tag_filter)
 
     @app.route('/add_device', methods=['GET', 'POST'])
     @permission_required('add_device')
@@ -242,6 +279,20 @@ def register_routes(app):
             subnets = [dict(id=row[0], name=row[1], cidr=row[2], site=row[3]) for row in cursor.fetchall()]
             cursor.execute('''SELECT DeviceIPAddress.id as device_ip_id, IPAddress.ip FROM DeviceIPAddress JOIN IPAddress ON DeviceIPAddress.ip_id = IPAddress.id WHERE DeviceIPAddress.device_id = %s''', (device_id,))
             device_ips = [{'device_ip_id': row[0], 'ip': row[1]} for row in cursor.fetchall()]
+            
+            # Get device tags
+            cursor.execute('''
+                SELECT t.id, t.name, t.color
+                FROM DeviceTag dt
+                JOIN Tag t ON dt.tag_id = t.id
+                WHERE dt.device_id = %s
+                ORDER BY t.name
+            ''', (device_id,))
+            device_tags = [{'id': row[0], 'name': row[1], 'color': row[2]} for row in cursor.fetchall()]
+            
+            # Get all available tags
+            cursor.execute('SELECT id, name, color FROM Tag ORDER BY name')
+            all_tags = [{'id': row[0], 'name': row[1], 'color': row[2]} for row in cursor.fetchall()]
             available_ips_by_subnet = {}
             for subnet in subnets:
                 cursor.execute('SELECT id, ip FROM IPAddress WHERE subnet_id = %s AND id NOT IN (SELECT ip_id FROM DeviceIPAddress)', (subnet['id'],))
@@ -263,7 +314,12 @@ def register_routes(app):
                             in_range = False
                     ips = filtered_ips
                 available_ips_by_subnet[subnet['id']] = ips
-        return render_with_user('device.html', device={'id': device[0], 'name': device[1], 'description': device[2], 'device_type_id': device[3]}, subnets=subnets, device_ips=device_ips, available_ips_by_subnet=available_ips_by_subnet, device_types=device_types)
+        return render_with_user('device.html', 
+                               device={'id': device[0], 'name': device[1], 'description': device[2], 'device_type_id': device[3]}, 
+                               subnets=subnets, device_ips=device_ips, available_ips_by_subnet=available_ips_by_subnet, 
+                               device_types=device_types, device_tags=device_tags, all_tags=all_tags,
+                               can_assign_device_tag=has_permission('assign_device_tag'),
+                               can_remove_device_tag=has_permission('remove_device_tag'))
 
     @app.route('/update_device_type', methods=['POST'])
     @permission_required('edit_device')
@@ -361,6 +417,58 @@ def register_routes(app):
             cursor.execute('UPDATE IPAddress SET hostname = NULL WHERE id = %s', (ip_id,))
             conn.commit()
         logging.info(f"User {user_name} removed IP {ip} from device {device_id}.")
+        return redirect(url_for('device', device_id=device_id))
+
+    @app.route('/device/<int:device_id>/assign_tag', methods=['POST'])
+    @permission_required('assign_device_tag')
+    def device_assign_tag(device_id):
+        tag_id = request.form['tag_id']
+        from flask import current_app
+        with get_db_connection(current_app) as conn:
+            cursor = conn.cursor()
+            cursor.execute('SELECT name FROM Device WHERE id = %s', (device_id,))
+            device = cursor.fetchone()
+            if not device:
+                return redirect(url_for('devices'))
+            device_name = device[0]
+            
+            cursor.execute('SELECT name FROM Tag WHERE id = %s', (tag_id,))
+            tag = cursor.fetchone()
+            if not tag:
+                return redirect(url_for('device', device_id=device_id))
+            tag_name = tag[0]
+            
+            cursor.execute('SELECT id FROM DeviceTag WHERE device_id = %s AND tag_id = %s', (device_id, tag_id))
+            if cursor.fetchone():
+                return redirect(url_for('device', device_id=device_id))  # Already assigned
+            
+            cursor.execute('INSERT INTO DeviceTag (device_id, tag_id) VALUES (%s, %s)', (device_id, tag_id))
+            add_audit_log(session['user_id'], 'assign_device_tag', f"Assigned tag '{tag_name}' to device '{device_name}'", conn=conn)
+            conn.commit()
+        return redirect(url_for('device', device_id=device_id))
+
+    @app.route('/device/<int:device_id>/remove_tag', methods=['POST'])
+    @permission_required('remove_device_tag')
+    def device_remove_tag(device_id):
+        tag_id = request.form['tag_id']
+        from flask import current_app
+        with get_db_connection(current_app) as conn:
+            cursor = conn.cursor()
+            cursor.execute('SELECT name FROM Device WHERE id = %s', (device_id,))
+            device = cursor.fetchone()
+            if not device:
+                return redirect(url_for('devices'))
+            device_name = device[0]
+            
+            cursor.execute('SELECT name FROM Tag WHERE id = %s', (tag_id,))
+            tag = cursor.fetchone()
+            if not tag:
+                return redirect(url_for('device', device_id=device_id))
+            tag_name = tag[0]
+            
+            cursor.execute('DELETE FROM DeviceTag WHERE device_id = %s AND tag_id = %s', (device_id, tag_id))
+            add_audit_log(session['user_id'], 'remove_device_tag', f"Removed tag '{tag_name}' from device '{device_name}'", conn=conn)
+            conn.commit()
         return redirect(url_for('device', device_id=device_id))
 
     @app.route('/delete_device', methods=['POST'])
@@ -491,6 +599,21 @@ def register_routes(app):
                                can_add_subnet=has_permission('add_subnet'),
                                can_edit_subnet=has_permission('edit_subnet'),
                                can_delete_subnet=has_permission('delete_subnet'))
+
+    @app.route('/api-docs')
+    @permission_required('view_admin')
+    def api_docs():
+        # Get current user's API key
+        from flask import current_app
+        api_key = None
+        if 'user_id' in session:
+            with get_db_connection(current_app) as conn:
+                cursor = conn.cursor()
+                cursor.execute('SELECT api_key FROM User WHERE id = %s', (session['user_id'],))
+                result = cursor.fetchone()
+                if result:
+                    api_key = result[0]
+        return render_with_user('api_docs.html', api_key=api_key)
 
     @app.route('/users', methods=['GET', 'POST'])
     @permission_required('view_users')
@@ -657,6 +780,84 @@ def register_routes(app):
         
         return render_with_user('users.html', users=users, roles=roles, permissions=permissions, role_permissions=role_permissions, error=error, 
                                can_manage_users=has_permission('manage_users'), can_manage_roles=has_permission('manage_roles'))
+
+    @app.route('/tags', methods=['GET', 'POST'])
+    @permission_required('view_tags')
+    def tags():
+        from flask import current_app
+        with get_db_connection(current_app) as conn:
+            cursor = conn.cursor()
+            error = None
+            
+            if request.method == 'POST':
+                action = request.form['action']
+                
+                if action == 'add_tag':
+                    if not has_permission('add_tag', conn=conn):
+                        error = 'You do not have permission to add tags.'
+                    else:
+                        name = request.form['name'].strip()
+                        color = request.form.get('color', '#6B7280')
+                        description = request.form.get('description', '').strip()
+                        
+                        if not name:
+                            error = 'Tag name is required.'
+                        else:
+                            try:
+                                cursor.execute('INSERT INTO Tag (name, color, description) VALUES (%s, %s, %s)', 
+                                             (name, color, description))
+                                add_audit_log(session['user_id'], 'add_tag', f"Added tag '{name}'", conn=conn)
+                                conn.commit()
+                            except mysql.connector.IntegrityError:
+                                error = 'Tag name already exists.'
+                
+                elif action == 'edit_tag':
+                    if not has_permission('edit_tag', conn=conn):
+                        error = 'You do not have permission to edit tags.'
+                    else:
+                        tag_id = request.form['tag_id']
+                        name = request.form['name'].strip()
+                        color = request.form.get('color', '#6B7280')
+                        description = request.form.get('description', '').strip()
+                        
+                        if not name:
+                            error = 'Tag name is required.'
+                        else:
+                            try:
+                                cursor.execute('UPDATE Tag SET name = %s, color = %s, description = %s WHERE id = %s', 
+                                             (name, color, description, tag_id))
+                                add_audit_log(session['user_id'], 'edit_tag', f"Updated tag '{name}'", conn=conn)
+                                conn.commit()
+                            except mysql.connector.IntegrityError:
+                                error = 'Tag name already exists.'
+                
+                elif action == 'delete_tag':
+                    if not has_permission('delete_tag', conn=conn):
+                        error = 'You do not have permission to delete tags.'
+                    else:
+                        tag_id = request.form['tag_id']
+                        cursor.execute('SELECT name FROM Tag WHERE id = %s', (tag_id,))
+                        tag_name = cursor.fetchone()[0]
+                        cursor.execute('DELETE FROM Tag WHERE id = %s', (tag_id,))
+                        add_audit_log(session['user_id'], 'delete_tag', f"Deleted tag '{tag_name}'", conn=conn)
+                        conn.commit()
+            
+            # Get all tags with device counts
+            cursor.execute('''
+                SELECT t.id, t.name, t.color, t.description, t.created_at,
+                       COUNT(dt.device_id) as device_count
+                FROM Tag t
+                LEFT JOIN DeviceTag dt ON t.id = dt.tag_id
+                GROUP BY t.id, t.name, t.color, t.description, t.created_at
+                ORDER BY t.name
+            ''')
+            tags = [dict(id=row[0], name=row[1], color=row[2], description=row[3], 
+                        created_at=row[4], device_count=row[5]) for row in cursor.fetchall()]
+            
+        return render_with_user('tags.html', tags=tags, error=error,
+                               can_add_tag=has_permission('add_tag'),
+                               can_edit_tag=has_permission('edit_tag'),
+                               can_delete_tag=has_permission('delete_tag'))
 
     @app.route('/audit')
     @permission_required('view_audit')
@@ -1295,6 +1496,14 @@ def register_routes(app):
                     WHERE dia.device_id = %s
                 ''', (device['id'],))
                 device['ip_addresses'] = cursor.fetchall()
+                cursor.execute('''
+                    SELECT t.id, t.name, t.color
+                    FROM DeviceTag dt
+                    JOIN Tag t ON dt.tag_id = t.id
+                    WHERE dt.device_id = %s
+                    ORDER BY t.name
+                ''', (device['id'],))
+                device['tags'] = cursor.fetchall()
         return jsonify({'devices': devices})
     
     @app.route('/api/v1/devices/<int:device_id>', methods=['GET'])
@@ -1321,6 +1530,14 @@ def register_routes(app):
                 WHERE dia.device_id = %s
             ''', (device_id,))
             device['ip_addresses'] = cursor.fetchall()
+            cursor.execute('''
+                SELECT t.id, t.name, t.color
+                FROM DeviceTag dt
+                JOIN Tag t ON dt.tag_id = t.id
+                WHERE dt.device_id = %s
+                ORDER BY t.name
+            ''', (device_id,))
+            device['tags'] = cursor.fetchall()
         return jsonify(device)
     
     @app.route('/api/v1/devices', methods=['POST'])
@@ -1963,6 +2180,326 @@ def register_routes(app):
             conn.commit()
         return jsonify({'message': 'DHCP pools configured successfully', 'pool': {'start_ip': start_ip, 'end_ip': end_ip, 'excluded_ips': excluded_list}})
     
+    # Tags API
+    @app.route('/api/v1/tags', methods=['GET'])
+    @api_permission_required('view_tags')
+    def api_tags():
+        """Get all tags"""
+        from flask import current_app
+        with get_db_connection(current_app) as conn:
+            cursor = conn.cursor(dictionary=True)
+            cursor.execute('SELECT id, name, color, description, created_at FROM Tag ORDER BY name')
+            tags = cursor.fetchall()
+            for tag in tags:
+                cursor.execute('SELECT COUNT(*) as device_count FROM DeviceTag WHERE tag_id = %s', (tag['id'],))
+                tag['device_count'] = cursor.fetchone()['device_count']
+        return jsonify({'tags': tags})
+    
+    @app.route('/api/v1/tags', methods=['POST'])
+    @api_permission_required('add_tag')
+    def api_add_tag():
+        """Create a new tag"""
+        data = request.get_json()
+        if not data or 'name' not in data:
+            return jsonify({'error': 'Tag name is required'}), 400
+        
+        name = data['name'].strip()
+        if not name:
+            return jsonify({'error': 'Tag name cannot be empty'}), 400
+        
+        color = data.get('color', '#6B7280')
+        description = data.get('description', '')
+        
+        from flask import current_app
+        with get_db_connection(current_app) as conn:
+            cursor = conn.cursor()
+            try:
+                cursor.execute('INSERT INTO Tag (name, color, description) VALUES (%s, %s, %s)', (name, color, description))
+                tag_id = cursor.lastrowid
+                add_audit_log(request.api_user['id'], 'add_tag', f"Added tag '{name}'", conn=conn)
+                conn.commit()
+                return jsonify({'id': tag_id, 'name': name, 'color': color, 'description': description}), 201
+            except mysql.connector.IntegrityError:
+                return jsonify({'error': 'Tag name already exists'}), 400
+    
+    @app.route('/api/v1/tags/<int:tag_id>', methods=['GET'])
+    @api_permission_required('view_tags')
+    def api_tag(tag_id):
+        """Get a specific tag"""
+        from flask import current_app
+        with get_db_connection(current_app) as conn:
+            cursor = conn.cursor(dictionary=True)
+            cursor.execute('SELECT id, name, color, description, created_at FROM Tag WHERE id = %s', (tag_id,))
+            tag = cursor.fetchone()
+            if not tag:
+                return jsonify({'error': 'Tag not found'}), 404
+            cursor.execute('''
+                SELECT d.id, d.name, d.description, dt.name as device_type
+                FROM DeviceTag dtag
+                JOIN Device d ON dtag.device_id = d.id
+                LEFT JOIN DeviceType dt ON d.device_type_id = dt.id
+                WHERE dtag.tag_id = %s
+                ORDER BY d.name
+            ''', (tag_id,))
+            tag['devices'] = cursor.fetchall()
+        return jsonify(tag)
+    
+    @app.route('/api/v1/tags/<int:tag_id>', methods=['PUT'])
+    @api_permission_required('edit_tag')
+    def api_update_tag(tag_id):
+        """Update a tag"""
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': 'Request body is required'}), 400
+        
+        from flask import current_app
+        with get_db_connection(current_app) as conn:
+            cursor = conn.cursor()
+            cursor.execute('SELECT name, color, description FROM Tag WHERE id = %s', (tag_id,))
+            current = cursor.fetchone()
+            if not current:
+                return jsonify({'error': 'Tag not found'}), 404
+            
+            current_name, current_color, current_description = current
+            updates = []
+            values = []
+            
+            if 'name' in data and data['name'].strip() != current_name:
+                new_name = data['name'].strip()
+                if not new_name:
+                    return jsonify({'error': 'Tag name cannot be empty'}), 400
+                updates.append('name = %s')
+                values.append(new_name)
+            
+            if 'color' in data and data['color'] != current_color:
+                updates.append('color = %s')
+                values.append(data['color'])
+            
+            if 'description' in data and data['description'] != current_description:
+                updates.append('description = %s')
+                values.append(data['description'])
+            
+            if not updates:
+                return jsonify({'error': 'No changes to apply'}), 400
+            
+            values.append(tag_id)
+            try:
+                cursor.execute(f'UPDATE Tag SET {", ".join(updates)} WHERE id = %s', values)
+                add_audit_log(request.api_user['id'], 'edit_tag', f"Updated tag '{current_name}'", conn=conn)
+                conn.commit()
+                return jsonify({'message': 'Tag updated successfully'})
+            except mysql.connector.IntegrityError:
+                return jsonify({'error': 'Tag name already exists'}), 400
+    
+    @app.route('/api/v1/tags/<int:tag_id>', methods=['DELETE'])
+    @api_permission_required('delete_tag')
+    def api_delete_tag(tag_id):
+        """Delete a tag"""
+        from flask import current_app
+        with get_db_connection(current_app) as conn:
+            cursor = conn.cursor()
+            cursor.execute('SELECT name FROM Tag WHERE id = %s', (tag_id,))
+            tag = cursor.fetchone()
+            if not tag:
+                return jsonify({'error': 'Tag not found'}), 404
+            tag_name = tag[0]
+            cursor.execute('DELETE FROM Tag WHERE id = %s', (tag_id,))
+            add_audit_log(request.api_user['id'], 'delete_tag', f"Deleted tag '{tag_name}'", conn=conn)
+            conn.commit()
+        return jsonify({'message': 'Tag deleted successfully'})
+    
+    @app.route('/api/v1/devices/<int:device_id>/tags', methods=['GET'])
+    @api_permission_required('view_device')
+    def api_device_tags(device_id):
+        """Get tags for a specific device"""
+        from flask import current_app
+        with get_db_connection(current_app) as conn:
+            cursor = conn.cursor(dictionary=True)
+            cursor.execute('SELECT id, name FROM Device WHERE id = %s', (device_id,))
+            if not cursor.fetchone():
+                return jsonify({'error': 'Device not found'}), 404
+            cursor.execute('''
+                SELECT t.id, t.name, t.color, t.description, dt.created_at
+                FROM DeviceTag dt
+                JOIN Tag t ON dt.tag_id = t.id
+                WHERE dt.device_id = %s
+                ORDER BY t.name
+            ''', (device_id,))
+            tags = cursor.fetchall()
+        return jsonify({'tags': tags})
+    
+    @app.route('/api/v1/devices/<int:device_id>/tags', methods=['POST'])
+    @api_permission_required('assign_device_tag')
+    def api_assign_device_tag(device_id):
+        """Assign a tag to a device"""
+        data = request.get_json()
+        if not data or 'tag_id' not in data:
+            return jsonify({'error': 'tag_id is required'}), 400
+        
+        tag_id = data['tag_id']
+        from flask import current_app
+        with get_db_connection(current_app) as conn:
+            cursor = conn.cursor()
+            cursor.execute('SELECT name FROM Device WHERE id = %s', (device_id,))
+            device = cursor.fetchone()
+            if not device:
+                return jsonify({'error': 'Device not found'}), 404
+            device_name = device[0]
+            
+            cursor.execute('SELECT name FROM Tag WHERE id = %s', (tag_id,))
+            tag = cursor.fetchone()
+            if not tag:
+                return jsonify({'error': 'Tag not found'}), 404
+            tag_name = tag[0]
+            
+            cursor.execute('SELECT id FROM DeviceTag WHERE device_id = %s AND tag_id = %s', (device_id, tag_id))
+            if cursor.fetchone():
+                return jsonify({'error': 'Tag already assigned to device'}), 400
+            
+            cursor.execute('INSERT INTO DeviceTag (device_id, tag_id) VALUES (%s, %s)', (device_id, tag_id))
+            add_audit_log(request.api_user['id'], 'assign_device_tag', f"Assigned tag '{tag_name}' to device '{device_name}'", conn=conn)
+            conn.commit()
+        return jsonify({'message': 'Tag assigned successfully'})
+    
+    @app.route('/api/v1/devices/<int:device_id>/tags/<int:tag_id>', methods=['DELETE'])
+    @api_permission_required('remove_device_tag')
+    def api_remove_device_tag(device_id, tag_id):
+        """Remove a tag from a device"""
+        from flask import current_app
+        with get_db_connection(current_app) as conn:
+            cursor = conn.cursor()
+            cursor.execute('SELECT name FROM Device WHERE id = %s', (device_id,))
+            device = cursor.fetchone()
+            if not device:
+                return jsonify({'error': 'Device not found'}), 404
+            device_name = device[0]
+            
+            cursor.execute('SELECT name FROM Tag WHERE id = %s', (tag_id,))
+            tag = cursor.fetchone()
+            if not tag:
+                return jsonify({'error': 'Tag not found'}), 404
+            tag_name = tag[0]
+            
+            cursor.execute('SELECT id FROM DeviceTag WHERE device_id = %s AND tag_id = %s', (device_id, tag_id))
+            if not cursor.fetchone():
+                return jsonify({'error': 'Tag not assigned to device'}), 404
+            
+            cursor.execute('DELETE FROM DeviceTag WHERE device_id = %s AND tag_id = %s', (device_id, tag_id))
+            add_audit_log(request.api_user['id'], 'remove_device_tag', f"Removed tag '{tag_name}' from device '{device_name}'", conn=conn)
+            conn.commit()
+        return jsonify({'message': 'Tag removed successfully'})
+    
+    @app.route('/api/v1/devices/by-tag/<tag_identifier>', methods=['GET'])
+    @api_permission_required('view_devices')
+    def api_devices_by_tag(tag_identifier):
+        """Get devices by tag name or ID. Use ?format=simple for simplified response."""
+        from flask import current_app
+        simple_format = request.args.get('format') == 'simple'
+        
+        with get_db_connection(current_app) as conn:
+            cursor = conn.cursor(dictionary=True)
+            
+            # Check if tag_identifier is numeric (tag ID) or string (tag name)
+            try:
+                tag_id = int(tag_identifier)
+                # Query by tag ID
+                if simple_format:
+                    cursor.execute('''
+                        SELECT d.id, d.name
+                        FROM DeviceTag dtag
+                        JOIN Device d ON dtag.device_id = d.id
+                        WHERE dtag.tag_id = %s
+                        ORDER BY d.name
+                    ''', (tag_id,))
+                else:
+                    cursor.execute('''
+                        SELECT d.id, d.name, d.description, dt.name as device_type, dt.icon_class
+                        FROM DeviceTag dtag
+                        JOIN Device d ON dtag.device_id = d.id
+                        LEFT JOIN DeviceType dt ON d.device_type_id = dt.id
+                        WHERE dtag.tag_id = %s
+                        ORDER BY d.name
+                    ''', (tag_id,))
+                # Get tag name for response
+                cursor.execute('SELECT name FROM Tag WHERE id = %s', (tag_id,))
+                tag_result = cursor.fetchone()
+                if not tag_result:
+                    return jsonify({'error': 'Tag not found'}), 404
+                tag_name = tag_result['name']
+            except ValueError:
+                # Query by tag name
+                tag_name = tag_identifier
+                if simple_format:
+                    cursor.execute('''
+                        SELECT d.id, d.name
+                        FROM DeviceTag dtag
+                        JOIN Device d ON dtag.device_id = d.id
+                        JOIN Tag t ON dtag.tag_id = t.id
+                        WHERE t.name = %s
+                        ORDER BY d.name
+                    ''', (tag_name,))
+                else:
+                    cursor.execute('''
+                        SELECT d.id, d.name, d.description, dt.name as device_type, dt.icon_class
+                        FROM DeviceTag dtag
+                        JOIN Device d ON dtag.device_id = d.id
+                        JOIN Tag t ON dtag.tag_id = t.id
+                        LEFT JOIN DeviceType dt ON d.device_type_id = dt.id
+                        WHERE t.name = %s
+                        ORDER BY d.name
+                    ''', (tag_name,))
+            
+            devices = cursor.fetchall()
+            
+            if not devices:
+                return jsonify({'devices': [], 'tag_name': tag_name, 'count': 0})
+            
+            if simple_format:
+                # Simple format: just name and first IP as clean array
+                simple_devices = []
+                for device in devices:
+                    cursor.execute('''
+                        SELECT ip.ip
+                        FROM DeviceIPAddress dia
+                        JOIN IPAddress ip ON dia.ip_id = ip.id
+                        WHERE dia.device_id = %s
+                        ORDER BY ip.ip
+                        LIMIT 1
+                    ''', (device['id'],))
+                    ip_result = cursor.fetchone()
+                    first_ip = ip_result['ip'] if ip_result else None
+                    
+                    # Only include devices that have an IP address
+                    if first_ip:
+                        simple_devices.append({
+                            'device': device['name'],
+                            'ip': first_ip
+                        })
+                    
+                return jsonify(simple_devices)
+            else:
+                # Full format: complete device information
+                for device in devices:
+                    cursor.execute('''
+                        SELECT ip.id, ip.ip, ip.hostname, s.id as subnet_id, s.name as subnet_name, s.cidr, s.site
+                        FROM DeviceIPAddress dia
+                        JOIN IPAddress ip ON dia.ip_id = ip.id
+                        JOIN Subnet s ON ip.subnet_id = s.id
+                        WHERE dia.device_id = %s
+                    ''', (device['id'],))
+                    device['ip_addresses'] = cursor.fetchall()
+                    
+                    cursor.execute('''
+                        SELECT t.id, t.name, t.color
+                        FROM DeviceTag dtag
+                        JOIN Tag t ON dtag.tag_id = t.id
+                        WHERE dtag.device_id = %s
+                        ORDER BY t.name
+                    ''', (device['id'],))
+                    device['tags'] = cursor.fetchall()
+                    
+                return jsonify({'devices': devices, 'tag_name': tag_name, 'count': len(devices)})
+    
     # Audit Log API
     @app.route('/api/v1/audit', methods=['GET'])
     @api_permission_required('view_audit')
@@ -2047,6 +2584,8 @@ def register_routes(app):
     app.add_url_rule('/device/<int:device_id>', 'device', device)
     app.add_url_rule('/device/<int:device_id>/add_ip', 'device_add_ip', device_add_ip, methods=['POST'])
     app.add_url_rule('/device/<int:device_id>/delete_ip', 'device_delete_ip', device_delete_ip, methods=['POST'])
+    app.add_url_rule('/device/<int:device_id>/assign_tag', 'device_assign_tag', device_assign_tag, methods=['POST'])
+    app.add_url_rule('/device/<int:device_id>/remove_tag', 'device_remove_tag', device_remove_tag, methods=['POST'])
     app.add_url_rule('/delete_device', 'delete_device', delete_device, methods=['POST'])
     app.add_url_rule('/subnet/<int:subnet_id>', 'subnet', subnet)
     app.add_url_rule('/add_subnet', 'add_subnet', add_subnet, methods=['POST'])
@@ -2054,6 +2593,7 @@ def register_routes(app):
     app.add_url_rule('/delete_subnet', 'delete_subnet', delete_subnet, methods=['POST'])
     app.add_url_rule('/admin', 'admin', admin, methods=['GET', 'POST'])
     app.add_url_rule('/users', 'users', users, methods=['GET', 'POST'])
+    app.add_url_rule('/tags', 'tags', tags, methods=['GET', 'POST'])
     app.add_url_rule('/audit', 'audit', audit)
     app.add_url_rule('/get_available_ips', 'get_available_ips', get_available_ips)
     app.add_url_rule('/rename_device', 'rename_device', rename_device, methods=['POST'])

@@ -60,7 +60,7 @@
                         <button type="submit" class="bg-gray-200 hover:bg-gray-400 dark:bg-zinc-700 dark:hover:bg-zinc-600 hover:cursor-pointer px-4 py-2 rounded-lg w-full">Add IP</button>
                     </div>
                 </form>
-                <div class="allocated-ips">
+                <div class="allocated-ips mb-6">
                     <h3 class="text-lg font-bold mb-2">Allocated IPs:</h3>
                     <ul class="space-y-2">
                         {% for ip in device_ips %}
@@ -74,6 +74,49 @@
                         {% endfor %}
                     </ul>
                 </div>
+                
+                <!-- Tags Section -->
+                <div class="tags-section mb-6">
+                    <h3 class="text-lg font-bold mb-2">Tags:</h3>
+                    <div class="flex flex-wrap gap-2 mb-4">
+                        {% if device_tags %}
+                            {% for tag in device_tags %}
+                            <div class="flex items-center space-x-1 px-3 py-1 rounded-full text-sm" style="background-color: {{ tag.color }}20; border: 1px solid {{ tag.color }}">
+                                <div class="w-2 h-2 rounded-full" style="background-color: {{ tag.color }}"></div>
+                                <span>{{ tag.name }}</span>
+                                {% if can_remove_device_tag %}
+                                <form action="/device/{{ device.id }}/remove_tag" method="POST" class="inline">
+                                    <input type="hidden" name="tag_id" value="{{ tag.id }}">
+                                    <button type="submit" class="ml-1 text-red-500 hover:text-red-700 text-xs" title="Remove tag">
+                                        <i class="fas fa-times"></i>
+                                    </button>
+                                </form>
+                                {% endif %}
+                            </div>
+                            {% endfor %}
+                        {% else %}
+                            <span class="text-gray-500">No tags assigned</span>
+                        {% endif %}
+                    </div>
+                    
+                    {% if can_assign_device_tag and all_tags %}
+                    <form action="/device/{{ device.id }}/assign_tag" method="POST" class="flex gap-2">
+                        <select name="tag_id" class="border p-2 rounded-lg bg-gray-200 dark:bg-zinc-800 border-gray-600 flex-1" required>
+                            <option value="" disabled selected>Select a tag to assign...</option>
+                            {% for tag in all_tags %}
+                                {% set already_assigned = device_tags|selectattr('id', 'equalto', tag.id)|list|length > 0 %}
+                                {% if not already_assigned %}
+                                <option value="{{ tag.id }}">{{ tag.name }}</option>
+                                {% endif %}
+                            {% endfor %}
+                        </select>
+                        <button type="submit" class="bg-gray-200 hover:bg-gray-400 dark:bg-zinc-700 dark:hover:bg-zinc-600 hover:cursor-pointer px-4 py-2 rounded-lg">
+                            <i class="fas fa-plus mr-1"></i>Assign Tag
+                        </button>
+                    </form>
+                    {% endif %}
+                </div>
+                
                 <form action="/update_device_description" method="POST" class="mb-6 mt-4">
                     <input type="hidden" name="device_id" value="{{ device.id }}">
                     <label for="description" class="block mb-2 text-lg font-bold">Description</label>

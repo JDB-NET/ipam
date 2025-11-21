@@ -199,6 +199,30 @@ def init_db(app=None):
     if not cursor.fetchone():
         cursor.execute('ALTER TABLE User ADD COLUMN api_key VARCHAR(255) DEFAULT NULL UNIQUE')
     
+    # Create Tag table
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS Tag (
+        id INTEGER PRIMARY KEY AUTO_INCREMENT,
+        name VARCHAR(255) NOT NULL UNIQUE,
+        color VARCHAR(7) DEFAULT '#6B7280',
+        description TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+    ''')
+    
+    # Create DeviceTag junction table
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS DeviceTag (
+        id INTEGER PRIMARY KEY AUTO_INCREMENT,
+        device_id INTEGER NOT NULL,
+        tag_id INTEGER NOT NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE KEY unique_device_tag (device_id, tag_id),
+        FOREIGN KEY (device_id) REFERENCES Device(id) ON DELETE CASCADE,
+        FOREIGN KEY (tag_id) REFERENCES Tag(id) ON DELETE CASCADE
+    )
+    ''')
+    
     # Define all permissions with categories
     permissions = [
         # View permissions
@@ -245,6 +269,14 @@ def init_db(app=None):
         ('add_device_type', 'Add device type', 'Device Type'),
         ('edit_device_type', 'Edit device type', 'Device Type'),
         ('delete_device_type', 'Delete device type', 'Device Type'),
+        
+        # Tag permissions
+        ('view_tags', 'View tags', 'Tag'),
+        ('add_tag', 'Add new tag', 'Tag'),
+        ('edit_tag', 'Edit tag', 'Tag'),
+        ('delete_tag', 'Delete tag', 'Tag'),
+        ('assign_device_tag', 'Assign tag to device', 'Tag'),
+        ('remove_device_tag', 'Remove tag from device', 'Tag'),
         
         # Admin permissions
         ('manage_users', 'Manage users (add, edit, delete)', 'Admin'),
@@ -306,7 +338,8 @@ def init_db(app=None):
         'add_rack', 'delete_rack', 'add_device_to_rack', 'remove_device_from_rack',
         'add_nonnet_device_to_rack', 'export_rack_csv',
         'configure_dhcp',
-        'add_device_type', 'edit_device_type', 'delete_device_type'
+        'add_device_type', 'edit_device_type', 'delete_device_type',
+        'view_tags', 'add_tag', 'edit_tag', 'delete_tag', 'assign_device_tag', 'remove_device_tag'
     ]
     
     for perm_name in non_admin_permissions:
@@ -325,7 +358,7 @@ def init_db(app=None):
     view_only_permissions = [
         'view_index', 'view_devices', 'view_device', 'view_subnet', 'view_racks', 'view_rack',
         'view_audit', 'view_device_types', 'view_device_type_stats', 'view_devices_by_type',
-        'view_dhcp', 'view_help'
+        'view_dhcp', 'view_help', 'view_tags'
     ]
     
     for perm_name in view_only_permissions:

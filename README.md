@@ -11,10 +11,11 @@ A Flask-based web application for comprehensive IP Address Management (IPAM). Ma
 - **Subnet Management**: Create and manage IP subnets with CIDR notation (supports /24 to /32)
 - **IP Address Tracking**: Automatic IP address generation and tracking for each subnet
 - **Device Management**: Track devices with types (Server, VM, Switch, Firewall, WiFi AP, Printer, Other)
+- **Device Tagging**: Organize devices with customizable tags featuring colors and descriptions
 - **IP Assignment**: Assign IP addresses to devices with automatic hostname updates
 - **DHCP Pool Configuration**: Configure DHCP pools with start/end IP ranges and excluded IPs
 - **Rack Management**: Physical infrastructure tracking with U positions and front/back sides
-- **Site Organization**: Organize subnets and devices by site/location
+- **Site Organisation**: Organize subnets and devices by site/location
 - **Audit Logging**: Complete audit trail of all changes with user, action, details, and timestamps
 - **User Management**: Multi-user support with secure password authentication
 - **Role-Based Access Control (RBAC)**: Granular permission system with default roles (admin, user, view_only) and custom role creation
@@ -36,7 +37,7 @@ docker run -d \
   -e MYSQL_PASSWORD=your_password \
   -e MYSQL_DATABASE=ipam \
   -e SECRET_KEY=your_secret_key \
-  -e NAME="Your Organization" \
+  -e NAME="Your Organisation" \
   -e LOGO_PNG="https://example.com/logo.png" \
   ghcr.io/jdb-net/ipam:latest
 ```
@@ -59,7 +60,7 @@ services:
       - MYSQL_PASSWORD=your_password
       - MYSQL_DATABASE=ipam
       - SECRET_KEY=your_secret_key
-      - NAME=Your Organization
+      - NAME=Your Organisation
       - LOGO_PNG=https://example.com/logo.png
 ```
 
@@ -72,8 +73,8 @@ services:
 - `MYSQL_PASSWORD`: Database password (default: password)
 - `MYSQL_DATABASE`: Database name (default: ipam)
 - `SECRET_KEY`: Flask secret key for sessions (**REQUIRED in production!**)
-- `NAME`: Organization name displayed in header (default: JDB-NET)
-- `LOGO_PNG`: URL or path to organization logo (default: JDB-NET logo)
+- `NAME`: Organisation name displayed in header (default: JDB-NET)
+- `LOGO_PNG`: URL or path to organisation logo (default: JDB-NET logo)
 
 ### Database Setup
 
@@ -135,6 +136,22 @@ FLUSH PRIVILEGES;
    - **Height**: Rack height in U units
 3. Open a rack to assign devices to specific U positions (front or back)
 
+### Device Tagging
+
+1. **Managing Tags** (Admin only):
+   - Navigate to "Admin" > "Tag Management"
+   - Click "Add Tag" to create new tags with custom colors and descriptions
+   - Edit or delete existing tags as needed
+
+2. **Assigning Tags to Devices**:
+   - Open any device from the Devices page
+   - Use the tag assignment dropdown to add multiple tags
+   - Remove tags by clicking the × button next to the tag name
+
+3. **Filtering by Tags**:
+   - Use the tag filter dropdown on the Devices page to view devices with specific tags
+   - Tags appear as colored badges throughout the interface for easy identification
+
 ### Audit Log
 
 View all changes and actions in the "Audit Log" section, with filtering by user, subnet, action type, or device name.
@@ -182,6 +199,9 @@ The application includes a comprehensive REST API for programmatic access:
 
 3. **Available Endpoints**:
    - **Devices**: `GET`, `POST`, `PUT`, `DELETE /api/v1/devices`
+   - **Device Tags**: `GET /api/v1/devices/by-tag/{tag}` (filter devices by tag)
+   - **Tags**: `GET`, `POST`, `PUT`, `DELETE /api/v1/tags` (with `?format=simple` option)
+   - **Tag Assignment**: `GET`, `POST /api/v1/devices/{id}/tags`, `DELETE /api/v1/devices/{id}/tags/{tag_id}`
    - **Subnets**: `GET`, `POST`, `PUT`, `DELETE /api/v1/subnets`
    - **Racks**: `GET`, `POST`, `DELETE /api/v1/racks`
    - **Device Types**: `GET /api/v1/device-types`
@@ -193,10 +213,19 @@ The application includes a comprehensive REST API for programmatic access:
 
 5. **Documentation**: Full API documentation is available in the Help page of the web interface.
 
-**Example API Request**:
+**Example API Requests**:
 ```bash
+# List all devices
 curl -H "X-API-Key: your_api_key" \
      https://your-server:5000/api/v1/devices
+
+# Get devices with a specific tag
+curl -H "X-API-Key: your_api_key" \
+     https://your-server:5000/api/v1/devices/by-tag/production
+
+# List all tags in simple format
+curl -H "X-API-Key: your_api_key" \
+     https://your-server:5000/api/v1/tags?format=simple
 ```
 
 ## Kubernetes Deployment

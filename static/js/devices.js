@@ -1,5 +1,18 @@
 document.addEventListener('DOMContentLoaded', function() {
 
+    // Tag filter functionality
+    const tagFilter = document.getElementById('tag-filter');
+    if (tagFilter) {
+        tagFilter.addEventListener('change', function() {
+            const selectedTag = this.value;
+            if (selectedTag) {
+                window.location.href = '/devices?tag=' + encodeURIComponent(selectedTag);
+            } else {
+                window.location.href = '/devices';
+            }
+        });
+    }
+
     // Expand/collapse site groups
     document.querySelectorAll('.site-header').forEach(header => {
         header.addEventListener('click', function(e) {
