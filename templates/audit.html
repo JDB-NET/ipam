@@ -43,28 +43,30 @@
                     <span>Filter</span>
                 </button>
             </form>
-            <table class="w-full table-auto bg-gray-200 dark:bg-zinc-800 rounded-lg overflow-hidden">
-                <thead>
-                    <tr class="bg-gray-400 dark:bg-zinc-700">
-                        <th class="px-4 py-2 text-center">User</th>
-                        <th class="px-4 py-2 text-center">Action</th>
-                        <th class="px-4 py-2 text-center">Details</th>
-                        <th class="px-4 py-2 text-center">Subnet</th>
-                        <th class="px-4 py-2 text-center">Timestamp</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for log in logs %}
-                    <tr class="border-b border-gray-700">
-                        <td class="px-4 py-2 text-center">{{ log[1] or 'Unknown' }}</td>
-                        <td class="px-4 py-2 text-center">{{ log[2] }}</td>
-                        <td class="px-4 py-2 text-center truncate" title="{{ log[3] }}">{{ log[3][:100] ~ ('…' if log[3]|length > 100 else '') }}</td>
-                        <td class="px-4 py-2 text-center">{{ log[4] or 'N/A' }}</td>
-                        <td class="px-4 py-2 text-center" data-utc="{{ log[5] }}">{{ log[5] }}</td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
+            <div class="overflow-x-auto">
+                <table class="w-full table-auto bg-gray-200 dark:bg-zinc-800 rounded-lg overflow-hidden">
+                    <thead>
+                        <tr class="bg-gray-400 dark:bg-zinc-700">
+                            <th class="px-4 py-2 text-center">User</th>
+                            <th class="px-4 py-2 text-center">Action</th>
+                            <th class="px-4 py-2 text-center">Details</th>
+                            <th class="px-4 py-2 text-center">Subnet</th>
+                            <th class="px-4 py-2 text-center">Timestamp</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for log in logs %}
+                        <tr class="border-b border-gray-700">
+                            <td class="px-4 py-2 text-center">{{ log[1] or 'Unknown' }}</td>
+                            <td class="px-4 py-2 text-center">{{ log[2] }}</td>
+                            <td class="px-4 py-2 text-center truncate" title="{{ log[3] }}">{{ log[3][:100] ~ ('…' if log[3]|length > 100 else '') }}</td>
+                            <td class="px-4 py-2 text-center">{{ log[4] or 'N/A' }}</td>
+                            <td class="px-4 py-2 text-center" data-utc="{{ log[5] }}">{{ log[5] }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
             {% if total_pages > 1 %}
             <div class="flex justify-center mt-6 space-x-2">
                 {% if page > 1 %}
