@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.5.1](https://github.com/JDB-NET/ipam/compare/v1.5.0...v1.5.1) (2025-12-04)
+
+
+### Bug Fixes
+
+* :bug: audit log on mobile ([6f01c99](https://github.com/JDB-NET/ipam/commit/6f01c9956f4a31414a082a779eb493735df0b8e6))
+
 ## [1.5.0](https://github.com/JDB-NET/ipam/compare/v1.4.2...v1.5.0) (2025-11-21)
 
 
