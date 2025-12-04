@@ -24,16 +24,6 @@
                 <button type="button" id="export-csv" class="hidden sm:flex absolute right-0 bg-gray-200 hover:bg-gray-400 dark:bg-zinc-700 dark:hover:bg-zinc-600 hover:cursor-pointer items-center justify-center rounded-full w-11 h-11 export-csv-btn" title="Export as CSV" data-rack-id="{{ rack.id }}">
                     <i class="fas fa-file-csv fa-lg"></i>
                 </button>
-                <script>
-                document.addEventListener('DOMContentLoaded', function() {
-                    var btn = document.getElementById('export-csv');
-                    if (btn) {
-                        btn.addEventListener('click', function() {
-                            window.location = '/rack/' + btn.getAttribute('data-rack-id') + '/export_csv';
-                        });
-                    }
-                });
-                </script>
             </div>
             <div class="flex flex-col gap-4 mb-6 items-stretch">
                 <div class="flex gap-4 w-full justify-center">
@@ -78,31 +68,7 @@
                 </div>
                 <div class="text-xs dark:text-gray-400 mt-2">Add a non-networked device.</div>
             </form>
-            <script>
-            function showBothAddButtons() {
-                document.getElementById('show-add-device-form').classList.remove('hidden');
-                document.getElementById('show-nonnet-form').classList.remove('hidden');
-            }
-            document.addEventListener('DOMContentLoaded', function() {
-                showBothAddButtons();
-                document.getElementById('show-nonnet-form').onclick = function() {
-                    document.getElementById('nonnet-form').classList.remove('hidden');
-                    this.classList.add('hidden');
-                };
-                document.getElementById('hide-nonnet-form').onclick = function() {
-                    document.getElementById('nonnet-form').classList.add('hidden');
-                    showBothAddButtons();
-                };
-                document.getElementById('show-add-device-form').onclick = function() {
-                    document.getElementById('add-device-form').classList.remove('hidden');
-                    this.classList.add('hidden');
-                };
-                document.getElementById('hide-add-device-form').onclick = function() {
-                    document.getElementById('add-device-form').classList.add('hidden');
-                    showBothAddButtons();
-                };
-            });
-            </script>
+    <script src="/static/js/rack.js"></script>
             {% if error %}
             <div class="mb-4 p-3 bg-red-700 text-white rounded-lg text-center font-semibold">{{ error }}</div>
             {% endif %}

@@ -6,7 +6,6 @@
     <title>{{ subnet.name }} - Subnet Details</title>
     <link rel="icon" type="image/png" href="{{ LOGO_PNG }}">
     <link href="/static/css/output.css" rel="stylesheet">
-    <script src="/static/js/subnet.js"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css" rel="stylesheet">
 </head>
 <body class="bg-gray-300 text-gray-900 dark:bg-zinc-900 dark:text-gray-100 min-h-screen flex flex-col">
@@ -74,21 +73,6 @@
         </div>
     </div>
     <script src="/static/js/export_csv.js"></script>
-    <script>
-document.addEventListener('DOMContentLoaded', function() {
-    const toggleBtn = document.getElementById('toggle-desc');
-    const descCols = document.querySelectorAll('.desc-col');
-    const descHeader = document.getElementById('desc-col-header');
-    let shown = false;
-    if (toggleBtn) {
-        toggleBtn.addEventListener('click', function() {
-            shown = !shown;
-            descCols.forEach(col => col.classList.toggle('hidden', !shown));
-            if (descHeader) descHeader.classList.toggle('hidden', !shown);
-            toggleBtn.textContent = shown ? 'Hide Descriptions' : 'Show Descriptions';
-        });
-    }
-});
-</script>
+    <script src="/static/js/subnet.js"></script>
 </body>
 </html>

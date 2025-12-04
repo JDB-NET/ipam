@@ -1,38 +1,55 @@
 document.addEventListener('DOMContentLoaded', () => {
     const form = document.querySelector('form');
     if (form) {
-        form.addEventListener('submit', (event) => {
-            event.preventDefault();
-        });
-
-        const searchInput = document.createElement('input');
-        searchInput.type = 'text';
-        searchInput.placeholder = 'Search by IP or Hostname';
-        searchInput.className = 'p-2 w-full rounded-lg bg-gray-200 dark:bg-zinc-800 border border-gray-600 focus:outline-none focus:border-blue-400 mb-4 text-center';
-        form.insertAdjacentElement('beforebegin', searchInput);
-
-        searchInput.addEventListener('keypress', (event) => {
-            if (event.key === 'Enter') {
+        // Check if search input already exists to prevent duplicates
+        if (!document.querySelector('input[placeholder="Search by IP or Hostname"]')) {
+            form.addEventListener('submit', (event) => {
                 event.preventDefault();
-                const searchTerm = searchInput.value.toLowerCase();
-                const rows = document.querySelectorAll('tbody tr');
+            });
 
-                rows.forEach(row => {
-                    const ipCell = row.querySelector('td:nth-child(1)').textContent.toLowerCase();
-                    const hostnameCell = row.querySelector('td:nth-child(2)').textContent.toLowerCase();
+            const searchInput = document.createElement('input');
+            searchInput.type = 'text';
+            searchInput.placeholder = 'Search by IP or Hostname';
+            searchInput.className = 'p-2 w-full rounded-lg bg-gray-200 dark:bg-zinc-800 border border-gray-600 focus:outline-none focus:border-blue-400 mb-4 text-center';
+            form.insertAdjacentElement('beforebegin', searchInput);
 
-                    if (ipCell.includes(searchTerm) || hostnameCell.includes(searchTerm)) {
-                        row.style.backgroundColor = 'rgba(59, 130, 246, 0.5)';
-                        row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            searchInput.addEventListener('keypress', (event) => {
+                if (event.key === 'Enter') {
+                    event.preventDefault();
+                    const searchTerm = searchInput.value.toLowerCase();
+                    const rows = document.querySelectorAll('tbody tr');
 
-                        setTimeout(() => {
+                    rows.forEach(row => {
+                        const ipCell = row.querySelector('td:nth-child(1)').textContent.toLowerCase();
+                        const hostnameCell = row.querySelector('td:nth-child(2)').textContent.toLowerCase();
+
+                        if (ipCell.includes(searchTerm) || hostnameCell.includes(searchTerm)) {
+                            row.style.backgroundColor = 'rgba(59, 130, 246, 0.5)';
+                            row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+                            setTimeout(() => {
+                                row.style.backgroundColor = '';
+                            }, 3000);
+                        } else {
                             row.style.backgroundColor = '';
-                        }, 3000);
-                    } else {
-                        row.style.backgroundColor = '';
-                    }
-                });
-            }
+                        }
+                    });
+                }
+            });
+        }
+    }
+
+    // Description toggle functionality
+    const toggleBtn = document.getElementById('toggle-desc');
+    const descCols = document.querySelectorAll('.desc-col');
+    const descHeader = document.getElementById('desc-col-header');
+    let shown = false;
+    if (toggleBtn) {
+        toggleBtn.addEventListener('click', function() {
+            shown = !shown;
+            descCols.forEach(col => col.classList.toggle('hidden', !shown));
+            if (descHeader) descHeader.classList.toggle('hidden', !shown);
+            toggleBtn.textContent = shown ? 'Hide Descriptions' : 'Show Descriptions';
         });
     }
 
