@@ -1004,7 +1004,27 @@ def register_routes(app):
         with get_db_connection(current_app) as conn:
             cursor = conn.cursor()
             cursor.execute('''SELECT id, ip FROM IPAddress WHERE subnet_id = %s AND id NOT IN (SELECT ip_id FROM DeviceIPAddress) AND (hostname IS NULL OR hostname != 'DHCP')''', (subnet_id,))
-            available_ips = [{'id': row[0], 'ip': row[1]} for row in cursor.fetchall()]
+            available_ips = cursor.fetchall()
+            
+            # Filter out DHCP pool IPs
+            cursor.execute('SELECT start_ip, end_ip, excluded_ips FROM DHCPPool WHERE subnet_id = %s', (subnet_id,))
+            dhcp_row = cursor.fetchone()
+            if dhcp_row:
+                start_ip, end_ip, excluded_ips = dhcp_row
+                excluded_list = [x for x in (excluded_ips or '').replace(' ', '').split(',') if x]
+                in_range = False
+                filtered_ips = []
+                for ip_obj in available_ips:
+                    ip = ip_obj[1]
+                    if ip == start_ip:
+                        in_range = True
+                    if ip in excluded_list or not (in_range and ip not in excluded_list):
+                        filtered_ips.append(ip_obj)
+                    if ip == end_ip:
+                        in_range = False
+                available_ips = filtered_ips
+            
+            available_ips = [{'id': row[0], 'ip': row[1]} for row in available_ips]
         return {'available_ips': available_ips}
 
     @app.route('/rename_device', methods=['POST'])
@@ -2667,6 +2687,228 @@ def register_routes(app):
             kwargs['current_user_name'] = get_current_user_name()
         return render_template(*args, **kwargs)
 
+    # Bulk Operations
+    @app.route('/bulk', methods=['GET'])
+    @permission_required('view_devices')
+    def bulk_operations():
+        from flask import current_app
+        with get_db_connection(current_app) as conn:
+            cursor = conn.cursor()
+            cursor.execute('SELECT id, name FROM Device ORDER BY name')
+            devices = cursor.fetchall()
+            cursor.execute('SELECT id, name, cidr, site FROM Subnet ORDER BY site, name')
+            subnets = cursor.fetchall()
+            cursor.execute('SELECT id, name FROM Tag ORDER BY name')
+            tags = cursor.fetchall()
+            cursor.execute('SELECT id, name FROM DeviceType ORDER BY name')
+            device_types = cursor.fetchall()
+        return render_with_user('bulk_operations.html', 
+                               devices=devices, 
+                               subnets=subnets, 
+                               tags=tags,
+                               device_types=device_types,
+                               can_add_device_ip=has_permission('add_device_ip'),
+                               can_add_device=has_permission('add_device'),
+                               can_assign_device_tag=has_permission('assign_device_tag'),
+                               can_export_subnet_csv=has_permission('export_subnet_csv'))
+    
+    @app.route('/bulk/assign_ips', methods=['POST'])
+    @permission_required('add_device_ip')
+    def bulk_assign_ips():
+        device_id = request.form['device_id']
+        ip_ids = request.form.getlist('ip_ids[]')
+        user_name = get_current_user_name()
+        results = {'success': [], 'failed': []}
+        
+        from flask import current_app
+        with get_db_connection(current_app) as conn:
+            cursor = conn.cursor()
+            cursor.execute('SELECT name FROM Device WHERE id = %s', (device_id,))
+            device = cursor.fetchone()
+            if not device:
+                return jsonify({'success': [], 'failed': [{'ip_id': 'all', 'reason': 'Device not found'}]})
+            
+            device_name = device[0]
+            
+            for ip_id in ip_ids:
+                try:
+                    cursor.execute('SELECT ip, subnet_id FROM IPAddress WHERE id = %s', (ip_id,))
+                    ip_row = cursor.fetchone()
+                    if not ip_row:
+                        results['failed'].append({'ip_id': ip_id, 'reason': 'IP not found'})
+                        continue
+                    
+                    ip, subnet_id = ip_row[0], ip_row[1]
+                    
+                    # Check if IP is already assigned
+                    cursor.execute('SELECT id FROM DeviceIPAddress WHERE ip_id = %s', (ip_id,))
+                    if cursor.fetchone():
+                        results['failed'].append({'ip_id': ip_id, 'ip': ip, 'reason': 'IP already assigned'})
+                        continue
+                    
+                    # Check if IP is in DHCP pool (using exact same logic as device_add_ip)
+                    cursor.execute('SELECT start_ip, end_ip, excluded_ips FROM DHCPPool WHERE subnet_id = %s', (subnet_id,))
+                    dhcp_row = cursor.fetchone()
+                    if dhcp_row:
+                        start_ip, end_ip, excluded_ips = dhcp_row
+                        excluded_list = [x for x in (excluded_ips or '').replace(' ', '').split(',') if x]
+                        if ip not in excluded_list:
+                            cursor.execute('SELECT ip FROM IPAddress WHERE subnet_id = %s', (subnet_id,))
+                            all_ips = [row[0] for row in cursor.fetchall()]
+                            in_range = False
+                            reserved_for_dhcp = False
+                            for candidate_ip in all_ips:
+                                if candidate_ip == start_ip:
+                                    in_range = True
+                                if in_range and candidate_ip == ip:
+                                    reserved_for_dhcp = True
+                                    break
+                                if candidate_ip == end_ip:
+                                    in_range = False
+                            if reserved_for_dhcp:
+                                results['failed'].append({'ip_id': ip_id, 'ip': ip, 'reason': 'IP is reserved for DHCP'})
+                                continue
+                    
+                    cursor.execute('INSERT INTO DeviceIPAddress (device_id, ip_id) VALUES (%s, %s)', (device_id, ip_id))
+                    cursor.execute('UPDATE IPAddress SET hostname = %s WHERE id = %s', (device_name, ip_id))
+                    cursor.execute('SELECT name, cidr FROM Subnet WHERE id = %s', (subnet_id,))
+                    subnet = cursor.fetchone()
+                    subnet_name, subnet_cidr = subnet[0], subnet[1]
+                    add_audit_log(session['user_id'], 'add_device_ip', 
+                                f"Assigned IP {ip} ({subnet_name} {subnet_cidr}) to device {device_name}", 
+                                subnet_id, conn=conn)
+                    results['success'].append({'ip_id': ip_id, 'ip': ip})
+                except Exception as e:
+                    results['failed'].append({'ip_id': ip_id, 'reason': str(e)})
+            
+            conn.commit()
+        
+        return jsonify(results)
+    
+    @app.route('/bulk/create_devices', methods=['POST'])
+    @permission_required('add_device')
+    def bulk_create_devices():
+        device_names = request.form.get('device_names', '').strip().split('\n')
+        device_type_id = int(request.form.get('device_type', 1))
+        user_name = get_current_user_name()
+        results = {'success': [], 'failed': []}
+        
+        from flask import current_app
+        with get_db_connection(current_app) as conn:
+            cursor = conn.cursor()
+            for name in device_names:
+                name = name.strip()
+                if not name:
+                    continue
+                try:
+                    cursor.execute('INSERT INTO Device (name, device_type_id) VALUES (%s, %s)', (name, device_type_id))
+                    device_id = cursor.lastrowid
+                    add_audit_log(session['user_id'], 'add_device', f"Added device {name}", conn=conn)
+                    results['success'].append({'name': name, 'id': device_id})
+                except Exception as e:
+                    results['failed'].append({'name': name, 'reason': str(e)})
+            conn.commit()
+        
+        logging.info(f"User {user_name} bulk created {len(results['success'])} devices.")
+        return jsonify(results)
+    
+    @app.route('/bulk/assign_tags', methods=['POST'])
+    @permission_required('assign_device_tag')
+    def bulk_assign_tags():
+        device_ids = request.form.getlist('device_ids[]')
+        tag_ids = request.form.getlist('tag_ids[]')
+        user_name = get_current_user_name()
+        results = {'success': [], 'failed': []}
+        
+        from flask import current_app
+        with get_db_connection(current_app) as conn:
+            cursor = conn.cursor()
+            for device_id in device_ids:
+                cursor.execute('SELECT name FROM Device WHERE id = %s', (device_id,))
+                device = cursor.fetchone()
+                if not device:
+                    results['failed'].append({'device_id': device_id, 'reason': 'Device not found'})
+                    continue
+                device_name = device[0]
+                
+                for tag_id in tag_ids:
+                    try:
+                        cursor.execute('SELECT name FROM Tag WHERE id = %s', (tag_id,))
+                        tag = cursor.fetchone()
+                        if not tag:
+                            continue
+                        tag_name = tag[0]
+                        
+                        cursor.execute('SELECT id FROM DeviceTag WHERE device_id = %s AND tag_id = %s', (device_id, tag_id))
+                        if cursor.fetchone():
+                            continue  # Already assigned
+                        
+                        cursor.execute('INSERT INTO DeviceTag (device_id, tag_id) VALUES (%s, %s)', (device_id, tag_id))
+                        add_audit_log(session['user_id'], 'assign_device_tag', 
+                                    f"Assigned tag '{tag_name}' to device '{device_name}'", conn=conn)
+                        results['success'].append({'device_id': device_id, 'device_name': device_name, 'tag_id': tag_id, 'tag_name': tag_name})
+                    except Exception as e:
+                        results['failed'].append({'device_id': device_id, 'tag_id': tag_id, 'reason': str(e)})
+            conn.commit()
+        
+        logging.info(f"User {user_name} bulk assigned tags to {len(device_ids)} devices.")
+        return jsonify(results)
+    
+    @app.route('/bulk/export_subnets', methods=['POST'])
+    @permission_required('export_subnet_csv')
+    def bulk_export_subnets():
+        subnet_ids = request.form.getlist('subnet_ids[]')
+        from flask import current_app
+        output = StringIO()
+        writer = csv.writer(output)
+        
+        with get_db_connection(current_app) as conn:
+            cursor = conn.cursor()
+            for subnet_id in subnet_ids:
+                cursor.execute('SELECT id, name, cidr FROM Subnet WHERE id = %s', (subnet_id,))
+                subnet = cursor.fetchone()
+                if not subnet:
+                    continue
+                
+                writer.writerow([f"Subnet: {subnet[1]} ({subnet[2]})"])
+                writer.writerow(['IP Address', 'Hostname', 'Description'])
+                
+                cursor.execute('SELECT * FROM IPAddress WHERE subnet_id = %s', (subnet_id,))
+                ip_addresses = cursor.fetchall()
+                cursor.execute('SELECT id, name, description FROM Device')
+                devices = cursor.fetchall()
+                device_name_map = {name.lower(): (id, description) for id, name, description in devices}
+                
+                for ip in ip_addresses:
+                    hostname = ip[2]
+                    device_description = None
+                    if hostname:
+                        match = device_name_map.get(hostname.lower())
+                        if match:
+                            device_description = match[1]
+                    writer.writerow([ip[1] or '', hostname or '', device_description or ''])
+                
+                writer.writerow([])  # Empty row between subnets
+        
+        output.seek(0)
+        return send_file(BytesIO(output.getvalue().encode('utf-8')), 
+                        mimetype='text/csv',
+                        as_attachment=True,
+                        download_name='bulk_subnet_export.csv')
+    
+    # API key regeneration route
+    @app.route('/regenerate_api_key', methods=['POST'])
+    @permission_required('manage_users')
+    def regenerate_api_key():
+        user_id = request.form['user_id']
+        from flask import current_app
+        with get_db_connection(current_app) as conn:
+            cursor = conn.cursor()
+            new_api_key = generate_api_key()
+            cursor.execute('UPDATE User SET api_key = %s WHERE id = %s', (new_api_key, user_id))
+            conn.commit()
+        return redirect(url_for('users'))
+
     app.add_url_rule('/login', 'login', login, methods=['GET', 'POST'])
     app.add_url_rule('/logout', 'logout', logout)
     app.add_url_rule('/', 'index', index)
@@ -2703,16 +2945,3 @@ def register_routes(app):
     app.add_url_rule('/rack/<int:rack_id>/delete', 'delete_rack', delete_rack, methods=['POST'])
     app.add_url_rule('/rack/<int:rack_id>/export_csv', 'export_rack_csv', export_rack_csv)
     app.add_url_rule('/help', 'help', help)
-    
-    # API key regeneration route
-    @app.route('/regenerate_api_key', methods=['POST'])
-    @permission_required('manage_users')
-    def regenerate_api_key():
-        user_id = request.form['user_id']
-        from flask import current_app
-        with get_db_connection(current_app) as conn:
-            cursor = conn.cursor()
-            new_api_key = generate_api_key()
-            cursor.execute('UPDATE User SET api_key = %s WHERE id = %s', (new_api_key, user_id))
-            conn.commit()
-        return redirect(url_for('users'))

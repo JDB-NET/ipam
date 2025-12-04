@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bulk Operations</title>
+    <link rel="icon" type="image/png" href="{{ LOGO_PNG }}">
+    <link href="/static/css/output.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css" rel="stylesheet">
+</head>
+<body class="bg-gray-300 text-gray-900 dark:bg-zinc-900 dark:text-gray-100 min-h-screen flex flex-col">
+    {% include 'header.html' %}
+    <div class="flex-1 mx-4 py-8 pt-20">
+        <div class="container max-w-6xl mx-auto">
+            <div class="flex items-center mb-6 relative">
+                <a href="/devices" class="hidden sm:flex absolute left-0 bg-gray-200 hover:bg-gray-400 dark:bg-zinc-700 dark:hover:bg-zinc-600 hover:cursor-pointer items-center justify-center rounded-full w-11 h-11"><i class="fas fa-arrow-left"></i></a>
+                <h1 class="text-3xl font-bold text-center w-full">Bulk Operations</h1>
+            </div>
+            
+            <!-- Tabs -->
+            <div class="flex flex-wrap gap-2 mb-6 justify-center border-b border-gray-600">
+                <button onclick="showTab('assign-ips')" id="tab-assign-ips" class="tab-btn px-4 py-2 rounded-t-lg bg-gray-200 dark:bg-zinc-800 hover:bg-gray-300 dark:hover:bg-zinc-700 hover:cursor-pointer active">Bulk IP Assignment</button>
+                <button onclick="showTab('create-devices')" id="tab-create-devices" class="tab-btn px-4 py-2 rounded-t-lg bg-gray-200 dark:bg-zinc-800 hover:bg-gray-300 dark:hover:bg-zinc-700 hover:cursor-pointer">Bulk Device Creation</button>
+                <button onclick="showTab('assign-tags')" id="tab-assign-tags" class="tab-btn px-4 py-2 rounded-t-lg bg-gray-200 dark:bg-zinc-800 hover:bg-gray-300 dark:hover:bg-zinc-700 hover:cursor-pointer">Bulk Tag Assignment</button>
+                <button onclick="showTab('export')" id="tab-export" class="tab-btn px-4 py-2 rounded-t-lg bg-gray-200 dark:bg-zinc-800 hover:bg-gray-300 dark:hover:bg-zinc-700 hover:cursor-pointer">Bulk Export</button>
+            </div>
+            
+            <!-- Bulk IP Assignment -->
+            <div id="panel-assign-ips" class="tab-panel bg-gray-200 dark:bg-zinc-800 p-6 rounded-lg shadow-md">
+                {% if can_add_device_ip %}
+                <h2 class="text-2xl font-bold mb-4">Bulk IP Assignment</h2>
+                <p class="text-gray-600 dark:text-gray-400 mb-4">Select a device and assign multiple IPs from a subnet. Hold Ctrl/Cmd to select multiple IPs.</p>
+                <form id="bulk-assign-ips-form" class="space-y-4">
+                    <div>
+                        <label class="block mb-2 font-medium">Select Device:</label>
+                        <select id="bulk-device-select" name="device_id" class="border p-3 rounded-lg bg-gray-300 dark:bg-zinc-900 border-gray-600 w-full" required>
+                            <option value="">Select a device...</option>
+                            {% for device in devices %}
+                            <option value="{{ device[0] }}">{{ device[1] }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block mb-2 font-medium">Select Subnet:</label>
+                        <select id="bulk-subnet-select" name="subnet_id" class="border p-3 rounded-lg bg-gray-300 dark:bg-zinc-900 border-gray-600 w-full" required>
+                            <option value="">Select a subnet...</option>
+                            {% for subnet in subnets %}
+                            <option value="{{ subnet[0] }}">{{ subnet[1] }} ({{ subnet[2] }}) - {{ subnet[3] or 'Unassigned' }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block mb-2 font-medium">Select IPs (hold Ctrl/Cmd to select multiple):</label>
+                        <select id="bulk-ip-select" name="ip_ids[]" multiple size="15" class="border p-2 rounded-lg bg-gray-300 dark:bg-zinc-900 border-gray-600 w-full" required>
+                            <option value="" disabled>Select a subnet first...</option>
+                        </select>
+                        <p class="text-sm text-gray-500 mt-1">Selected: <span id="selected-ip-count">0</span> IPs</p>
+                    </div>
+                    <button type="submit" class="bg-gray-300 hover:bg-gray-400 dark:bg-zinc-700 dark:hover:bg-zinc-600 hover:cursor-pointer px-6 py-2 rounded-lg">Assign IPs</button>
+                </form>
+                <div id="assign-ips-result" class="mt-4 hidden"></div>
+                {% else %}
+                <p class="text-gray-500">You don't have permission to assign IPs to devices.</p>
+                {% endif %}
+            </div>
+            
+            <!-- Bulk Device Creation -->
+            <div id="panel-create-devices" class="tab-panel hidden bg-gray-200 dark:bg-zinc-800 p-6 rounded-lg shadow-md">
+                {% if can_add_device %}
+                <h2 class="text-2xl font-bold mb-4">Bulk Device Creation</h2>
+                <p class="text-gray-600 dark:text-gray-400 mb-4">Create multiple devices at once. Enter one device name per line.</p>
+                <form id="bulk-create-devices-form" class="space-y-4">
+                    <div>
+                        <label class="block mb-2 font-medium">Device Names (one per line):</label>
+                        <textarea id="device-names" name="device_names" rows="10" class="border p-3 rounded-lg bg-gray-300 dark:bg-zinc-900 border-gray-600 w-full" placeholder="Device 1&#10;Device 2&#10;Device 3" required></textarea>
+                        <p class="text-sm text-gray-500 mt-1">Enter device names, one per line</p>
+                    </div>
+                    <div>
+                        <label class="block mb-2 font-medium">Device Type:</label>
+                        <select name="device_type" class="border p-3 rounded-lg bg-gray-300 dark:bg-zinc-900 border-gray-600 w-full" required>
+                            {% for dtype in device_types %}
+                            <option value="{{ dtype[0] }}">{{ dtype[1] }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <button type="submit" class="bg-gray-300 hover:bg-gray-400 dark:bg-zinc-700 dark:hover:bg-zinc-600 hover:cursor-pointer px-6 py-2 rounded-lg">Create Devices</button>
+                </form>
+                <div id="create-devices-result" class="mt-4 hidden"></div>
+                {% else %}
+                <p class="text-gray-500">You don't have permission to create devices.</p>
+                {% endif %}
+            </div>
+            
+            <!-- Bulk Tag Assignment -->
+            <div id="panel-assign-tags" class="tab-panel hidden bg-gray-200 dark:bg-zinc-800 p-6 rounded-lg shadow-md">
+                {% if can_assign_device_tag %}
+                <h2 class="text-2xl font-bold mb-4">Bulk Tag Assignment</h2>
+                <p class="text-gray-600 dark:text-gray-400 mb-4">Select multiple devices and assign one or more tags to them.</p>
+                <form id="bulk-assign-tags-form" class="space-y-4">
+                    <div>
+                        <label class="block mb-2 font-medium">Select Devices (hold Ctrl/Cmd to select multiple):</label>
+                        <select id="bulk-tag-device-select" name="device_ids[]" multiple size="10" class="border p-2 rounded-lg bg-gray-300 dark:bg-zinc-900 border-gray-600 w-full">
+                            {% for device in devices %}
+                            <option value="{{ device[0] }}">{{ device[1] }}</option>
+                            {% endfor %}
+                        </select>
+                        <p class="text-sm text-gray-500 mt-1">Selected: <span id="selected-tag-device-count">0</span> devices</p>
+                    </div>
+                    <div>
+                        <label class="block mb-2 font-medium">Select Tags (hold Ctrl/Cmd to select multiple):</label>
+                        <select name="tag_ids[]" multiple size="5" class="border p-2 rounded-lg bg-gray-300 dark:bg-zinc-900 border-gray-600 w-full" required>
+                            {% for tag in tags %}
+                            <option value="{{ tag[0] }}">{{ tag[1] }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <button type="submit" class="bg-gray-300 hover:bg-gray-400 dark:bg-zinc-700 dark:hover:bg-zinc-600 hover:cursor-pointer px-6 py-2 rounded-lg">Assign Tags</button>
+                </form>
+                <div id="assign-tags-result" class="mt-4 hidden"></div>
+                {% else %}
+                <p class="text-gray-500">You don't have permission to assign tags to devices.</p>
+                {% endif %}
+            </div>
+            
+            <!-- Bulk Export -->
+            <div id="panel-export" class="tab-panel hidden bg-gray-200 dark:bg-zinc-800 p-6 rounded-lg shadow-md">
+                {% if can_export_subnet_csv %}
+                <h2 class="text-2xl font-bold mb-4">Bulk Subnet Export</h2>
+                <p class="text-gray-600 dark:text-gray-400 mb-4">Select multiple subnets and export them to a single CSV file.</p>
+                <form id="bulk-export-form" method="POST" action="/bulk/export_subnets" class="space-y-4">
+                    <div>
+                        <label class="block mb-2 font-medium">Select Subnets (hold Ctrl/Cmd to select multiple):</label>
+                        <select name="subnet_ids[]" multiple size="10" class="border p-2 rounded-lg bg-gray-300 dark:bg-zinc-900 border-gray-600 w-full" required>
+                            {% for subnet in subnets %}
+                            <option value="{{ subnet[0] }}">{{ subnet[1] }} ({{ subnet[2] }}) - {{ subnet[3] or 'Unassigned' }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <button type="submit" class="bg-gray-300 hover:bg-gray-400 dark:bg-zinc-700 dark:hover:bg-zinc-600 hover:cursor-pointer px-6 py-2 rounded-lg">Export to CSV</button>
+                </form>
+                {% else %}
+                <p class="text-gray-500">You don't have permission to export subnets.</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        function showTab(tabName) {
+            // Hide all panels
+            document.querySelectorAll('.tab-panel').forEach(panel => panel.classList.add('hidden'));
+            // Remove active class from all tabs
+            document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+            // Show selected panel
+            document.getElementById('panel-' + tabName).classList.remove('hidden');
+            // Add active class to selected tab
+            document.getElementById('tab-' + tabName).classList.add('active');
+        }
+        
+        // Update selected IP count
+        document.getElementById('bulk-ip-select')?.addEventListener('change', function() {
+            document.getElementById('selected-ip-count').textContent = this.selectedOptions.length;
+        });
+        
+        document.getElementById('bulk-tag-device-select')?.addEventListener('change', function() {
+            document.getElementById('selected-tag-device-count').textContent = this.selectedOptions.length;
+        });
+        
+        // Load available IPs when subnet changes
+        document.getElementById('bulk-subnet-select')?.addEventListener('change', function() {
+            const subnetId = this.value;
+            const ipSelect = document.getElementById('bulk-ip-select');
+            if (!subnetId) {
+                ipSelect.innerHTML = '<option value="" disabled>Select a subnet first...</option>';
+                document.getElementById('selected-ip-count').textContent = '0';
+                return;
+            }
+            ipSelect.innerHTML = '<option value="" disabled>Loading...</option>';
+            fetch(`/get_available_ips?subnet_id=${subnetId}`)
+                .then(response => response.json())
+                .then(data => {
+                    ipSelect.innerHTML = '';
+                    if (data.available_ips.length === 0) {
+                        ipSelect.innerHTML = '<option value="" disabled>No available IPs in this subnet</option>';
+                    } else {
+                        data.available_ips.forEach(ip => {
+                            const option = document.createElement('option');
+                            option.value = ip.id;
+                            option.textContent = ip.ip;
+                            ipSelect.appendChild(option);
+                        });
+                    }
+                    document.getElementById('selected-ip-count').textContent = '0';
+                })
+                .catch(() => {
+                    ipSelect.innerHTML = '<option value="" disabled>Error loading IPs</option>';
+                });
+        });
+        
+        // Bulk IP Assignment
+        document.getElementById('bulk-assign-ips-form')?.addEventListener('submit', function(e) {
+            e.preventDefault();
+            const formData = new FormData(this);
+            const resultDiv = document.getElementById('assign-ips-result');
+            resultDiv.classList.remove('hidden');
+            resultDiv.innerHTML = '<p class="text-blue-500">Processing...</p>';
+            
+            fetch('/bulk/assign_ips', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                let html = '<div class="space-y-2">';
+                if (data.success.length > 0) {
+                    html += `<div class="text-green-600 dark:text-green-400"><strong>Successfully assigned ${data.success.length} IP(s):</strong><ul class="list-disc list-inside mt-2">`;
+                    data.success.forEach(item => {
+                        html += `<li>${item.ip}</li>`;
+                    });
+                    html += '</ul></div>';
+                }
+                if (data.failed.length > 0) {
+                    html += `<div class="text-red-600 dark:text-red-400"><strong>Failed ${data.failed.length} assignment(s):</strong><ul class="list-disc list-inside mt-2">`;
+                    data.failed.forEach(item => {
+                        const ipDisplay = item.ip ? ` (${item.ip})` : '';
+                        html += `<li>IP ID ${item.ip_id}${ipDisplay}: ${item.reason}</li>`;
+                    });
+                    html += '</ul></div>';
+                }
+                html += '</div>';
+                resultDiv.innerHTML = html;
+                // Reload IP list if successful
+                if (data.success.length > 0) {
+                    const subnetSelect = document.getElementById('bulk-subnet-select');
+                    if (subnetSelect.value) {
+                        subnetSelect.dispatchEvent(new Event('change'));
+                    }
+                }
+            })
+            .catch(error => {
+                resultDiv.innerHTML = `<p class="text-red-600">Error: ${error.message}</p>`;
+            });
+        });
+        
+        // Bulk Device Creation
+        document.getElementById('bulk-create-devices-form')?.addEventListener('submit', function(e) {
+            e.preventDefault();
+            const formData = new FormData(this);
+            const resultDiv = document.getElementById('create-devices-result');
+            resultDiv.classList.remove('hidden');
+            resultDiv.innerHTML = '<p class="text-blue-500">Processing...</p>';
+            
+            fetch('/bulk/create_devices', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                let html = '<div class="space-y-2">';
+                if (data.success.length > 0) {
+                    html += `<div class="text-green-600 dark:text-green-400"><strong>Successfully created ${data.success.length} device(s):</strong><ul class="list-disc list-inside mt-2">`;
+                    data.success.forEach(item => {
+                        html += `<li>${item.name}</li>`;
+                    });
+                    html += '</ul></div>';
+                }
+                if (data.failed.length > 0) {
+                    html += `<div class="text-red-600 dark:text-red-400"><strong>Failed ${data.failed.length} creation(s):</strong><ul class="list-disc list-inside mt-2">`;
+                    data.failed.forEach(item => {
+                        html += `<li>${item.name}: ${item.reason}</li>`;
+                    });
+                    html += '</ul></div>';
+                }
+                html += '</div>';
+                resultDiv.innerHTML = html;
+                if (data.success.length > 0) {
+                    setTimeout(() => window.location.reload(), 2000);
+                }
+            })
+            .catch(error => {
+                resultDiv.innerHTML = `<p class="text-red-600">Error: ${error.message}</p>`;
+            });
+        });
+        
+        // Bulk Tag Assignment
+        document.getElementById('bulk-assign-tags-form')?.addEventListener('submit', function(e) {
+            e.preventDefault();
+            const formData = new FormData(this);
+            const resultDiv = document.getElementById('assign-tags-result');
+            resultDiv.classList.remove('hidden');
+            resultDiv.innerHTML = '<p class="text-blue-500">Processing...</p>';
+            
+            fetch('/bulk/assign_tags', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                let html = '<div class="space-y-2">';
+                if (data.success.length > 0) {
+                    html += `<div class="text-green-600 dark:text-green-400"><strong>Successfully assigned ${data.success.length} tag(s):</strong><ul class="list-disc list-inside mt-2">`;
+                    data.success.forEach(item => {
+                        html += `<li>${item.device_name}: ${item.tag_name}</li>`;
+                    });
+                    html += '</ul></div>';
+                }
+                if (data.failed.length > 0) {
+                    html += `<div class="text-red-600 dark:text-red-400"><strong>Failed ${data.failed.length} assignment(s):</strong><ul class="list-disc list-inside mt-2">`;
+                    data.failed.forEach(item => {
+                        html += `<li>Device ID ${item.device_id}, Tag ID ${item.tag_id}: ${item.reason}</li>`;
+                    });
+                    html += '</ul></div>';
+                }
+                html += '</div>';
+                resultDiv.innerHTML = html;
+            })
+            .catch(error => {
+                resultDiv.innerHTML = `<p class="text-red-600">Error: ${error.message}</p>`;
+            });
+        });
+    </script>
+    <style>
+        .tab-btn.active {
+            background-color: rgb(156 163 175);
+            color: white;
+        }
+        .dark .tab-btn.active {
+            background-color: rgb(63 63 70);
+        }
+    </style>
+</body>
+</html>
+
