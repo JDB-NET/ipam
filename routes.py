@@ -7,6 +7,7 @@ import csv
 from io import StringIO, BytesIO
 import logging
 import mysql.connector
+import requests
 
 app = None
 
@@ -1099,6 +1100,61 @@ def register_routes(app):
             as_attachment=True,
             download_name=filename
         )
+
+    @app.route('/check_update')
+    @login_required
+    def check_update():
+        """Check for available updates from GitHub"""
+        try:
+            # Get current version
+            version_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'VERSION')
+            current_version = 'unknown'
+            if os.path.exists(version_file):
+                with open(version_file, 'r') as f:
+                    current_version = f.read().strip()
+            
+            # Fetch latest release from GitHub
+            response = requests.get('https://api.github.com/repos/JDB-NET/ipam/releases/latest', timeout=5)
+            if response.status_code != 200:
+                return jsonify({'error': 'Failed to fetch release information'}), 500
+            
+            release_data = response.json()
+            latest_version = release_data.get('tag_name', '').lstrip('v')
+            
+            # Compare versions using semantic versioning
+            if latest_version and latest_version != current_version:
+                # Simple semantic version comparison
+                def version_tuple(v):
+                    """Convert version string to tuple for comparison"""
+                    parts = v.split('.')
+                    return tuple(int(x) if x.isdigit() else 0 for x in parts[:3])
+                
+                try:
+                    current_tuple = version_tuple(current_version)
+                    latest_tuple = version_tuple(latest_version)
+                    # Only show update if latest is actually newer
+                    if latest_tuple <= current_tuple:
+                        return jsonify({'update_available': False})
+                except (ValueError, AttributeError):
+                    # Fallback to string comparison if parsing fails
+                    if latest_version == current_version:
+                        return jsonify({'update_available': False})
+                
+                return jsonify({
+                    'update_available': True,
+                    'current_version': current_version,
+                    'latest_version': latest_version,
+                    'release_url': release_data.get('html_url', '')
+                })
+            else:
+                return jsonify({'update_available': False})
+                
+        except requests.RequestException as e:
+            logging.error(f"Error checking for updates: {e}")
+            return jsonify({'error': 'Failed to check for updates'}), 500
+        except Exception as e:
+            logging.error(f"Unexpected error checking for updates: {e}")
+            return jsonify({'error': 'Failed to check for updates'}), 500
 
     @app.route('/get_available_ips')
     @permission_required('view_device')
