@@ -85,6 +85,7 @@
                                 <th class="text-center p-3">Name</th>
                                 <th class="text-center p-3">CIDR</th>
                                 <th class="text-center p-3">Site</th>
+                                <th class="text-center p-3">Utilisation</th>
                                 <th class="text-center p-3">Actions</th>
                             </tr>
                         </thead>
@@ -95,6 +96,14 @@
                                 <td class="p-3 font-mono text-sm text-center">{{ subnet.cidr }}</td>
                                 <td class="p-3 text-center">
                                     <span class="px-2 py-1 bg-gray-300 dark:bg-zinc-700 rounded text-sm">{{ subnet.site }}</span>
+                                </td>
+                                <td class="p-3 text-center">
+                                    {% if subnet.utilization %}
+                                    <span class="text-sm text-gray-600 dark:text-gray-400">{{ subnet.utilization.percent }}%</span>
+                                    <span class="text-xs text-gray-500 dark:text-gray-500 ml-1">({{ subnet.utilization.used }}/{{ subnet.utilization.total }})</span>
+                                    {% else %}
+                                    <span class="text-sm text-gray-500">—</span>
+                                    {% endif %}
                                 </td>
                                 <td class="p-3 text-center">
                                     <div class="flex items-center justify-center space-x-2">

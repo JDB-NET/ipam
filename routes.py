@@ -172,17 +172,46 @@ def register_routes(app):
     @permission_required('view_index')
     def index():
         from flask import current_app
-        with get_db_connection(current_app) as conn:
+        conn = get_db_connection(current_app)
+        try:
             cursor = conn.cursor()
             cursor.execute('SELECT id, name, cidr, site FROM Subnet')
             subnets = cursor.fetchall()
-        sites_subnets = {}
-        for subnet in subnets:
-            site = subnet[3] or 'Unassigned'
-            if site not in sites_subnets:
-                sites_subnets[site] = []
-            sites_subnets[site].append({'id': subnet[0], 'name': subnet[1], 'cidr': subnet[2]})
-        return render_with_user('index.html', sites_subnets=sites_subnets)
+            sites_subnets = {}
+            for subnet in subnets:
+                site = subnet[3] or 'Unassigned'
+                if site not in sites_subnets:
+                    sites_subnets[site] = []
+                
+                # Calculate utilization for each subnet
+                subnet_id = subnet[0]
+                cursor.execute('SELECT COUNT(*) FROM IPAddress WHERE subnet_id = %s', (subnet_id,))
+                total_ips = cursor.fetchone()[0]
+                
+                cursor.execute('''
+                    SELECT COUNT(*) FROM IPAddress ip
+                    WHERE ip.subnet_id = %s AND ip.id IN (SELECT ip_id FROM DeviceIPAddress)
+                ''', (subnet_id,))
+                assigned_ips = cursor.fetchone()[0]
+                
+                cursor.execute('''
+                    SELECT COUNT(*) FROM IPAddress ip
+                    WHERE ip.subnet_id = %s AND ip.hostname = 'DHCP' AND ip.id NOT IN (SELECT ip_id FROM DeviceIPAddress)
+                ''', (subnet_id,))
+                dhcp_ips = cursor.fetchone()[0]
+                
+                used_ips = assigned_ips + dhcp_ips
+                utilization_percent = (used_ips / total_ips * 100) if total_ips > 0 else 0
+                
+                sites_subnets[site].append({
+                    'id': subnet[0],
+                    'name': subnet[1],
+                    'cidr': subnet[2],
+                    'utilization': round(utilization_percent, 1)
+                })
+            return render_with_user('index.html', sites_subnets=sites_subnets)
+        finally:
+            conn.close()
 
     @app.route('/devices')
     @permission_required('view_devices')
@@ -504,6 +533,35 @@ def register_routes(app):
             subnet = cursor.fetchone()
             cursor.execute('SELECT * FROM IPAddress WHERE subnet_id = %s', (subnet_id,))
             ip_addresses = cursor.fetchall()
+            
+            # Calculate utilization stats
+            cursor.execute('SELECT COUNT(*) FROM IPAddress WHERE subnet_id = %s', (subnet_id,))
+            total_ips = cursor.fetchone()[0]
+            
+            cursor.execute('''
+                SELECT COUNT(*) FROM IPAddress ip
+                WHERE ip.subnet_id = %s AND ip.id IN (SELECT ip_id FROM DeviceIPAddress)
+            ''', (subnet_id,))
+            assigned_ips = cursor.fetchone()[0]
+            
+            cursor.execute('''
+                SELECT COUNT(*) FROM IPAddress ip
+                WHERE ip.subnet_id = %s AND ip.hostname = 'DHCP' AND ip.id NOT IN (SELECT ip_id FROM DeviceIPAddress)
+            ''', (subnet_id,))
+            dhcp_ips = cursor.fetchone()[0]
+            
+            available_ips = total_ips - assigned_ips - dhcp_ips
+            used_ips = assigned_ips + dhcp_ips
+            utilization_percent = (used_ips / total_ips * 100) if total_ips > 0 else 0
+            
+            utilization_stats = {
+                'total': total_ips,
+                'assigned': assigned_ips,
+                'dhcp': dhcp_ips,
+                'available': available_ips,
+                'percent': round(utilization_percent, 1)
+            }
+            
             cursor.execute('SELECT id, name, description FROM Device')
             devices = cursor.fetchall()
             device_name_map = {name.lower(): (id, description) for id, name, description in devices}
@@ -517,7 +575,7 @@ def register_routes(app):
                     if match:
                         device_id, device_description = match
                 ip_addresses_with_device.append((ip[0], ip[1], hostname, device_id, device_description))
-        return render_with_user('subnet.html', subnet={'id': subnet[0], 'name': subnet[1], 'cidr': subnet[2]}, ip_addresses=ip_addresses_with_device)
+        return render_with_user('subnet.html', subnet={'id': subnet[0], 'name': subnet[1], 'cidr': subnet[2]}, ip_addresses=ip_addresses_with_device, utilization=utilization_stats)
 
     @app.route('/add_subnet', methods=['POST'])
     @permission_required('add_subnet')
@@ -594,7 +652,42 @@ def register_routes(app):
         with get_db_connection(current_app) as conn:
             cursor = conn.cursor()
             cursor.execute('SELECT id, name, cidr, site FROM Subnet ORDER BY site, name')
-            subnets = [dict(id=row[0], name=row[1], cidr=row[2], site=row[3] or 'Unassigned') for row in cursor.fetchall()]
+            subnet_rows = cursor.fetchall()
+            subnets = []
+            for row in subnet_rows:
+                subnet_id = row[0]
+                # Calculate utilization for each subnet
+                cursor.execute('SELECT COUNT(*) FROM IPAddress WHERE subnet_id = %s', (subnet_id,))
+                total_ips = cursor.fetchone()[0]
+                
+                cursor.execute('''
+                    SELECT COUNT(*) FROM IPAddress ip
+                    WHERE ip.subnet_id = %s AND ip.id IN (SELECT ip_id FROM DeviceIPAddress)
+                ''', (subnet_id,))
+                assigned_ips = cursor.fetchone()[0]
+                
+                cursor.execute('''
+                    SELECT COUNT(*) FROM IPAddress ip
+                    WHERE ip.subnet_id = %s AND ip.hostname = 'DHCP' AND ip.id NOT IN (SELECT ip_id FROM DeviceIPAddress)
+                ''', (subnet_id,))
+                dhcp_ips = cursor.fetchone()[0]
+                
+                available_ips = total_ips - assigned_ips - dhcp_ips
+                used_ips = assigned_ips + dhcp_ips
+                utilization_percent = (used_ips / total_ips * 100) if total_ips > 0 else 0
+                
+                subnets.append({
+                    'id': row[0],
+                    'name': row[1],
+                    'cidr': row[2],
+                    'site': row[3] or 'Unassigned',
+                    'utilization': {
+                        'percent': round(utilization_percent, 1),
+                        'assigned': assigned_ips,
+                        'used': used_ips,
+                        'total': total_ips
+                    }
+                })
         return render_with_user('admin.html', subnets=subnets, 
                                can_add_subnet=has_permission('add_subnet'),
                                can_edit_subnet=has_permission('edit_subnet'),
@@ -1676,8 +1769,6 @@ def register_routes(app):
                             reserved_for_dhcp = True
                             break
                         if candidate_ip == end_ip:
-                            if candidate_ip == ip:
-                                reserved_for_dhcp = True
                             in_range = False
                     if reserved_for_dhcp:
                         return jsonify({'error': 'This IP is reserved for DHCP and cannot be assigned to a device'}), 400
