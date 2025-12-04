@@ -22,12 +22,6 @@
         {% if has_permission('view_admin') %}
         <a href="/admin" class="text-gray-200 hover:text-gray-400 font-medium">Admin</a>
         {% endif %}
-        {% if has_permission('view_users') %}
-        <a href="/users" class="text-gray-200 hover:text-gray-400 font-medium">Users</a>
-        {% endif %}
-        {% if has_permission('view_audit') %}
-        <a href="/audit" class="text-gray-200 hover:text-gray-400 font-medium">Audit Log</a>
-        {% endif %}
         {% if has_permission('view_help') %}
         <a href="/help" class="text-gray-200 hover:text-gray-400 font-medium">Help</a>
         {% endif %}
@@ -52,12 +46,6 @@
         {% endif %}
         {% if has_permission('view_admin') %}
         <a href="/admin" class="block px-6 py-2 text-gray-200 hover:text-gray-400 font-medium">Admin</a>
-        {% endif %}
-        {% if has_permission('view_users') %}
-        <a href="/users" class="block px-6 py-2 text-gray-200 hover:text-gray-400 font-medium">Users</a>
-        {% endif %}
-        {% if has_permission('view_audit') %}
-        <a href="/audit" class="block px-6 py-2 text-gray-200 hover:text-gray-400 font-medium">Audit Log</a>
         {% endif %}
         {% if has_permission('view_help') %}
         <a href="/help" class="block px-6 py-2 text-gray-200 hover:text-gray-400 font-medium">Help</a>
