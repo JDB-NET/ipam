@@ -1,9 +1,12 @@
 <header class="bg-zinc-800 shadow-md py-3 px-6 flex items-center justify-between relative">
-    <a href="/" class="flex items-center space-x-3">
-        <img src="{{ LOGO_PNG }}" alt="Logo" class="h-8 rounded">
-        <span class="text-2xl font-bold text-white">{{ NAME }} IPAM <span class="text-sm font-normal text-gray-300">v{{ VERSION }}</span></span>
-    </a>
-    <div class="hidden lg:block absolute left-1/2 transform -translate-x-1/2 text-white text-lg font-medium whitespace-nowrap">
+    <div class="flex items-center space-x-3">
+        <a href="/" class="flex items-center space-x-3">
+            <img src="{{ LOGO_PNG }}" alt="Logo" class="h-8 rounded">
+            <span class="text-2xl font-bold text-white whitespace-nowrap">{{ NAME }} IPAM</span>
+        </a>
+        <a href="https://github.com/JDB-NET/ipam/releases" target="_blank" rel="noopener noreferrer" class="text-sm font-normal text-gray-300 hover:text-gray-100 -ml-1 mt-3">v{{ VERSION }}</a>
+    </div>
+    <div class="hidden 2xl:block absolute left-1/2 transform -translate-x-1/2 text-white text-lg font-medium whitespace-nowrap">
         {% if current_user_name %}Hello, {{ current_user_name }}{% endif %}
     </div>
     <nav class="hidden md:flex items-center space-x-6" id="main-nav">
