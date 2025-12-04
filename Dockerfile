@@ -2,7 +2,7 @@ FROM python:3.13-slim
 WORKDIR /app
 COPY . /app
 RUN pip install -r requirements.txt
-RUN apt-get update && apt-get install -y curl
+RUN apt-get update && apt-get install -y curl mariadb-client-compat
 RUN rm -rf /var/lib/apt/lists/*
 RUN curl -sLO https://github.com/tailwindlabs/tailwindcss/releases/latest/download/tailwindcss-linux-x64 \
     && chmod +x tailwindcss-linux-x64 \

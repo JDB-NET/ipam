@@ -32,6 +32,7 @@ A Flask-based web application for comprehensive IP Address Management (IPAM). Ma
 docker run -d \
   --name ipam \
   -p 5000:5000 \
+  -v ./backups:/app/backups \
   -e MYSQL_HOST=10.10.2.27 \
   -e MYSQL_USER=ipam \
   -e MYSQL_PASSWORD=your_password \
@@ -45,15 +46,13 @@ docker run -d \
 ### Docker Compose
 
 ```yaml
-version: '3.8'
-
 services:
   ipam:
     image: ghcr.io/jdb-net/ipam:latest
     container_name: ipam
     restart: unless-stopped
     ports:
-      - "5000:5000"  # Web interface
+      - "5000:5000"
     environment:
       - MYSQL_HOST=10.10.2.27
       - MYSQL_USER=ipam
@@ -62,6 +61,8 @@ services:
       - SECRET_KEY=your_secret_key
       - NAME=Your Organisation
       - LOGO_PNG=https://example.com/logo.png
+    volumes:
+      - ./backups:/app/backups
 ```
 
 ## Configuration

@@ -8,6 +8,10 @@ from io import StringIO, BytesIO
 import logging
 import mysql.connector
 import requests
+import subprocess
+import shutil
+from datetime import datetime
+from werkzeug.utils import secure_filename
 
 app = None
 
@@ -1155,6 +1159,202 @@ def register_routes(app):
         except Exception as e:
             logging.error(f"Unexpected error checking for updates: {e}")
             return jsonify({'error': 'Failed to check for updates'}), 500
+
+    @app.route('/backup')
+    @permission_required('view_admin')
+    def backup():
+        """Backup and restore page"""
+        from flask import current_app
+        
+        # Ensure backups directory exists
+        backups_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'backups')
+        os.makedirs(backups_dir, exist_ok=True)
+        
+        # List available backups
+        backups = []
+        if os.path.exists(backups_dir):
+            for filename in os.listdir(backups_dir):
+                if filename.endswith('.sql'):
+                    filepath = os.path.join(backups_dir, filename)
+                    file_stat = os.stat(filepath)
+                    backups.append({
+                        'filename': filename,
+                        'size': file_stat.st_size,
+                        'created': datetime.fromtimestamp(file_stat.st_mtime).strftime('%Y-%m-%d %H:%M:%S')
+                    })
+        
+        # Sort by creation time (newest first)
+        backups.sort(key=lambda x: x['created'], reverse=True)
+        
+        return render_with_user('backup.html', backups=backups)
+
+    @app.route('/backup/create', methods=['POST'])
+    @permission_required('view_admin')
+    def create_backup():
+        """Create a database backup"""
+        from flask import current_app
+        
+        try:
+            backups_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'backups')
+            os.makedirs(backups_dir, exist_ok=True)
+            
+            # Generate backup filename with timestamp
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            filename = f'ipam_backup_{timestamp}.sql'
+            filepath = os.path.join(backups_dir, filename)
+            
+            # Get database configuration
+            db_host = current_app.config['MYSQL_HOST']
+            db_user = current_app.config['MYSQL_USER']
+            db_password = current_app.config['MYSQL_PASSWORD']
+            db_name = current_app.config['MYSQL_DATABASE']
+            
+            # Create backup using mysqldump
+            cmd = [
+                'mysqldump',
+                f'--host={db_host}',
+                f'--user={db_user}',
+                f'--password={db_password}',
+                '--skip-ssl',
+                '--single-transaction',
+                '--routines',
+                '--triggers',
+                db_name
+            ]
+            
+            with open(filepath, 'w') as f:
+                result = subprocess.run(cmd, stdout=f, stderr=subprocess.PIPE, text=True)
+            
+            if result.returncode != 0:
+                os.remove(filepath)
+                return jsonify({'error': f'Backup failed: {result.stderr}'}), 500
+            
+            # Log the backup creation
+            with get_db_connection(current_app) as conn:
+                add_audit_log(session.get('user_id'), 'create_backup', f'Created backup: {filename}', conn=conn)
+            
+            return jsonify({'success': True, 'filename': filename, 'message': 'Backup created successfully'})
+            
+        except Exception as e:
+            logging.error(f"Error creating backup: {e}")
+            return jsonify({'error': f'Failed to create backup: {str(e)}'}), 500
+
+    @app.route('/backup/download/<filename>')
+    @permission_required('view_admin')
+    def download_backup(filename):
+        """Download a backup file"""
+        from flask import current_app
+        
+        # Security: ensure filename is safe
+        filename = secure_filename(filename)
+        backups_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'backups')
+        filepath = os.path.join(backups_dir, filename)
+        
+        if not os.path.exists(filepath) or not filename.endswith('.sql'):
+            abort(404)
+        
+        return send_file(filepath, as_attachment=True, download_name=filename)
+
+    @app.route('/backup/restore', methods=['POST'])
+    @permission_required('view_admin')
+    def restore_backup():
+        """Restore database from backup"""
+        from flask import current_app
+        
+        try:
+            backups_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'backups')
+            os.makedirs(backups_dir, exist_ok=True)
+            
+            # Check if file was uploaded or if using existing file
+            if 'backup_file' in request.files:
+                # Handle file upload
+                file = request.files['backup_file']
+                if file.filename == '':
+                    return jsonify({'error': 'No file selected'}), 400
+                
+                if not file.filename.endswith('.sql'):
+                    return jsonify({'error': 'Invalid file type. Only .sql files are allowed'}), 400
+                
+                # Save uploaded file
+                filename = secure_filename(file.filename)
+                filepath = os.path.join(backups_dir, filename)
+                file.save(filepath)
+                
+            elif 'backup_filename' in request.form:
+                # Use existing backup file
+                filename = secure_filename(request.form['backup_filename'])
+                filepath = os.path.join(backups_dir, filename)
+                
+                if not os.path.exists(filepath):
+                    return jsonify({'error': 'Backup file not found'}), 404
+            else:
+                return jsonify({'error': 'No backup file specified'}), 400
+            
+            # Get database configuration
+            db_host = current_app.config['MYSQL_HOST']
+            db_user = current_app.config['MYSQL_USER']
+            db_password = current_app.config['MYSQL_PASSWORD']
+            db_name = current_app.config['MYSQL_DATABASE']
+            
+            # Close any existing database connections before restore
+            # This is important to avoid connection conflicts during restore
+            try:
+                # Try to close any open connections
+                pass
+            except:
+                pass
+            
+            # Restore database using mysql command
+            cmd = [
+                'mysql',
+                f'--host={db_host}',
+                f'--user={db_user}',
+                f'--password={db_password}',
+                '--skip-ssl',
+                db_name
+            ]
+            
+            with open(filepath, 'r', encoding='utf-8') as f:
+                result = subprocess.run(cmd, stdin=f, stderr=subprocess.PIPE, text=True)
+            
+            if result.returncode != 0:
+                return jsonify({'error': f'Restore failed: {result.stderr}'}), 500
+            
+            # Log the restore
+            with get_db_connection(current_app) as conn:
+                add_audit_log(session.get('user_id'), 'restore_backup', f'Restored backup: {filename}', conn=conn)
+            
+            return jsonify({'success': True, 'message': 'Database restored successfully'})
+            
+        except Exception as e:
+            logging.error(f"Error restoring backup: {e}")
+            return jsonify({'error': f'Failed to restore backup: {str(e)}'}), 500
+
+    @app.route('/backup/delete/<filename>', methods=['POST'])
+    @permission_required('view_admin')
+    def delete_backup(filename):
+        """Delete a backup file"""
+        from flask import current_app
+        
+        # Security: ensure filename is safe
+        filename = secure_filename(filename)
+        backups_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'backups')
+        filepath = os.path.join(backups_dir, filename)
+        
+        if not os.path.exists(filepath) or not filename.endswith('.sql'):
+            return jsonify({'error': 'Backup file not found'}), 404
+        
+        try:
+            os.remove(filepath)
+            
+            # Log the deletion
+            with get_db_connection(current_app) as conn:
+                add_audit_log(session.get('user_id'), 'delete_backup', f'Deleted backup: {filename}', conn=conn)
+            
+            return jsonify({'success': True, 'message': 'Backup deleted successfully'})
+        except Exception as e:
+            logging.error(f"Error deleting backup: {e}")
+            return jsonify({'error': f'Failed to delete backup: {str(e)}'}), 500
 
     @app.route('/get_available_ips')
     @permission_required('view_device')
@@ -3105,3 +3305,12 @@ def register_routes(app):
     app.add_url_rule('/rack/<int:rack_id>/delete', 'delete_rack', delete_rack, methods=['POST'])
     app.add_url_rule('/rack/<int:rack_id>/export_csv', 'export_rack_csv', export_rack_csv)
     app.add_url_rule('/help', 'help', help)
+    app.add_url_rule('/backup', 'backup', backup, methods=['GET', 'POST'])
+    app.add_url_rule('/backup/create', 'create_backup', create_backup, methods=['POST'])
+    app.add_url_rule('/backup/download/<filename>', 'download_backup', download_backup)
+    app.add_url_rule('/backup/restore', 'restore_backup', restore_backup, methods=['POST'])
+    app.add_url_rule('/backup/delete/<filename>', 'delete_backup', delete_backup, methods=['POST'])
+    app.add_url_rule('/backup/create', 'create_backup', create_backup, methods=['POST'])
+    app.add_url_rule('/backup/download/<filename>', 'download_backup', download_backup)
+    app.add_url_rule('/backup/restore', 'restore_backup', restore_backup, methods=['POST'])
+    app.add_url_rule('/backup/delete/<filename>', 'delete_backup', delete_backup, methods=['POST'])
