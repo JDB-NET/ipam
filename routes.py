@@ -958,24 +958,52 @@ def register_routes(app):
         PER_PAGE = 25
         page = int(request.args.get('page', 1))
         offset = (page - 1) * PER_PAGE
-        user_id = request.args.get('user_id')
+        
+        # Get filter parameters
+        user_ids = request.args.getlist('user_ids')  # Multiple users
         subnet_id = request.args.get('subnet_id')
         action = request.args.get('action')
         device_name = request.args.get('device_name')
+        date_from = request.args.get('date_from')
+        date_to = request.args.get('date_to')
+        search_query = request.args.get('search', '').strip()
+        
         query = '''SELECT AuditLog.id, COALESCE(User.name, 'Deleted User'), AuditLog.action, AuditLog.details, Subnet.name, AuditLog.timestamp FROM AuditLog LEFT JOIN User ON AuditLog.user_id = User.id LEFT JOIN Subnet ON AuditLog.subnet_id = Subnet.id WHERE 1=1'''
         params = []
-        if user_id:
-            query += ' AND AuditLog.user_id = %s'
-            params.append(user_id)
+        
+        # Multiple user filtering
+        if user_ids:
+            placeholders = ','.join(['%s'] * len(user_ids))
+            query += f' AND AuditLog.user_id IN ({placeholders})'
+            params.extend(user_ids)
+        
         if subnet_id:
             query += ' AND AuditLog.subnet_id = %s'
             params.append(subnet_id)
+        
         if action:
             query += ' AND AuditLog.action = %s'
             params.append(action)
+        
         if device_name:
             query += ' AND AuditLog.details LIKE %s'
             params.append(f'%{device_name}%')
+        
+        # Date range filtering
+        if date_from:
+            query += ' AND AuditLog.timestamp >= %s'
+            params.append(date_from)
+        
+        if date_to:
+            query += ' AND AuditLog.timestamp <= %s'
+            params.append(date_to + ' 23:59:59')
+        
+        # Search query (searches in details, user name, action, subnet name)
+        if search_query:
+            query += ' AND (AuditLog.details LIKE %s OR COALESCE(User.name, \'\') LIKE %s OR AuditLog.action LIKE %s OR COALESCE(Subnet.name, \'\') LIKE %s)'
+            search_pattern = f'%{search_query}%'
+            params.extend([search_pattern, search_pattern, search_pattern, search_pattern])
+        
         count_query = 'SELECT COUNT(*) FROM (' + query + ') AS count_subquery'
         with get_db_connection() as conn:
             cursor = conn.cursor()
@@ -984,17 +1012,93 @@ def register_routes(app):
             query += ' ORDER BY AuditLog.timestamp DESC LIMIT %s OFFSET %s'
             cursor.execute(query, params + [PER_PAGE, offset])
             logs = cursor.fetchall()
-            cursor.execute('SELECT id, name FROM User')
+            cursor.execute('SELECT id, name FROM User ORDER BY name')
             users = cursor.fetchall()
-            cursor.execute('SELECT id, name FROM Subnet')
+            cursor.execute('SELECT id, name FROM Subnet ORDER BY name')
             subnets = cursor.fetchall()
-            cursor.execute('SELECT DISTINCT action FROM AuditLog')
+            cursor.execute('SELECT DISTINCT action FROM AuditLog ORDER BY action')
             actions = [row[0] for row in cursor.fetchall()]
             cursor.execute('SELECT name FROM Device ORDER BY name')
             devices = cursor.fetchall()
         query_args = request.args.to_dict()
         total_pages = (total_logs + PER_PAGE - 1) // PER_PAGE
-        return render_with_user('audit.html', logs=logs, users=users, subnets=subnets, actions=actions, devices=devices, page=page, total_pages=total_pages, query_args=query_args)
+        return render_with_user('audit.html', logs=logs, users=users, subnets=subnets, actions=actions, devices=devices, page=page, total_pages=total_pages, query_args=query_args, selected_user_ids=user_ids, date_from=date_from, date_to=date_to, search_query=search_query)
+
+    @app.route('/audit/export_csv')
+    @permission_required('view_audit')
+    def export_audit_csv():
+        """Export audit logs to CSV with current filters applied"""
+        # Get filter parameters (same as audit route)
+        user_ids = request.args.getlist('user_ids')
+        subnet_id = request.args.get('subnet_id')
+        action = request.args.get('action')
+        device_name = request.args.get('device_name')
+        date_from = request.args.get('date_from')
+        date_to = request.args.get('date_to')
+        search_query = request.args.get('search', '').strip()
+        
+        query = '''SELECT COALESCE(User.name, 'Deleted User'), AuditLog.action, AuditLog.details, COALESCE(Subnet.name, 'N/A'), AuditLog.timestamp FROM AuditLog LEFT JOIN User ON AuditLog.user_id = User.id LEFT JOIN Subnet ON AuditLog.subnet_id = Subnet.id WHERE 1=1'''
+        params = []
+        
+        # Apply same filters as audit route
+        if user_ids:
+            placeholders = ','.join(['%s'] * len(user_ids))
+            query += f' AND AuditLog.user_id IN ({placeholders})'
+            params.extend(user_ids)
+        
+        if subnet_id:
+            query += ' AND AuditLog.subnet_id = %s'
+            params.append(subnet_id)
+        
+        if action:
+            query += ' AND AuditLog.action = %s'
+            params.append(action)
+        
+        if device_name:
+            query += ' AND AuditLog.details LIKE %s'
+            params.append(f'%{device_name}%')
+        
+        if date_from:
+            query += ' AND AuditLog.timestamp >= %s'
+            params.append(date_from)
+        
+        if date_to:
+            query += ' AND AuditLog.timestamp <= %s'
+            params.append(date_to + ' 23:59:59')
+        
+        if search_query:
+            query += ' AND (AuditLog.details LIKE %s OR COALESCE(User.name, \'\') LIKE %s OR AuditLog.action LIKE %s OR COALESCE(Subnet.name, \'\') LIKE %s)'
+            search_pattern = f'%{search_query}%'
+            params.extend([search_pattern, search_pattern, search_pattern, search_pattern])
+        
+        query += ' ORDER BY AuditLog.timestamp DESC'
+        
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(query, params)
+            logs = cursor.fetchall()
+        
+        # Create CSV
+        output = StringIO()
+        writer = csv.writer(output)
+        writer.writerow(['User', 'Action', 'Details', 'Subnet', 'Timestamp'])
+        
+        for log in logs:
+            writer.writerow(log)
+        
+        csv_bytes = output.getvalue().encode('utf-8')
+        output_bytes = BytesIO(csv_bytes)
+        
+        from datetime import datetime
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        filename = f'audit_logs_{timestamp}.csv'
+        
+        return send_file(
+            output_bytes,
+            mimetype='text/csv',
+            as_attachment=True,
+            download_name=filename
+        )
 
     @app.route('/get_available_ips')
     @permission_required('view_device')

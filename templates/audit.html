@@ -13,43 +13,105 @@
     <div class="flex-1 flex items-center justify-center mx-4">
         <div class="container py-8 max-w-8xl pt-20">
             <h1 class="text-3xl font-bold mb-6 text-center">Audit Log</h1>
-            <form method="GET" class="flex flex-wrap gap-4 mb-6 justify-center">
-                <select name="user_id" class="border p-2 rounded-lg bg-gray-300 dark:bg-zinc-900 border-gray-600">
-                    <option value="">All Users</option>
-                    {% for user in users %}
-                    <option value="{{ user[0] }}" {% if request.args.get('user_id') == user[0]|string %}selected{% endif %}>{{ user[1] }}</option>
-                    {% endfor %}
-                </select>
-                <select name="subnet_id" class="border p-2 rounded-lg bg-gray-300 dark:bg-zinc-900 border-gray-600">
-                    <option value="">All Subnets</option>
-                    {% for subnet in subnets %}
-                    <option value="{{ subnet[0] }}" {% if request.args.get('subnet_id') == subnet[0]|string %}selected{% endif %}>{{ subnet[1] }}</option>
-                    {% endfor %}
-                </select>
-                <select name="action" class="border p-2 rounded-lg bg-gray-300 dark:bg-zinc-900 border-gray-600">
-                    <option value="">All Actions</option>
-                    {% for a in actions %}
-                    <option value="{{ a }}" {% if request.args.get('action') == a %}selected{% endif %}>{{ a }}</option>
-                    {% endfor %}
-                </select>
-                <select name="device_name" class="border p-2 rounded-lg bg-gray-300 dark:bg-zinc-900 border-gray-600">
-                    <option value="">All Devices</option>
-                    {% for device in devices %}
-                    <option value="{{ device[0] }}" {% if request.args.get('device_name') == device[0] %}selected{% endif %}>{{ device[0] }}</option>
-                    {% endfor %}
-                </select>
-                <button type="submit" class="bg-gray-200 hover:bg-gray-400 dark:bg-zinc-700 dark:hover:bg-zinc-600 hover:cursor-pointer px-4 py-2 rounded-lg flex items-center gap-2">
-                    <i class="fas fa-search"></i>
-                    <span>Filter</span>
+            
+            <!-- Collapsible Filter Section -->
+            <div class="bg-gray-200 dark:bg-zinc-800 rounded-lg mb-6">
+                <button type="button" id="filter-toggle" class="w-full flex items-center justify-between p-4 hover:bg-gray-300 dark:hover:bg-zinc-700 rounded-lg transition-colors hover:cursor-pointer">
+                    <h2 class="text-lg font-semibold">Filters</h2>
+                    <i class="fas fa-chevron-down transition-transform duration-200 transform" id="filter-arrow"></i>
                 </button>
-            </form>
+                
+                <!-- Advanced Filter Form -->
+                <form method="GET" id="audit-filter-form" class="px-4 pb-4 {% if not (search_query or selected_user_ids or request.args.get('subnet_id') or request.args.get('action') or request.args.get('device_name') or date_from or date_to or request.args.get('expand_filters')) %}hidden{% endif %}">
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-4">
+                    <!-- Search -->
+                    <div class="lg:col-span-3">
+                        <label class="block text-sm font-medium mb-1">Search</label>
+                        <input type="text" name="search" value="{{ search_query or '' }}" placeholder="Search in details, user, action, subnet..." class="w-full border p-2 rounded-lg bg-gray-300 dark:bg-zinc-900 border-gray-600">
+                    </div>
+                    
+                    <!-- Multiple Users -->
+                    <div>
+                        <label class="block text-sm font-medium mb-1">Users</label>
+                        <select name="user_ids" multiple size="5" class="w-full border p-2 rounded-lg bg-gray-300 dark:bg-zinc-900 border-gray-600">
+                            {% for user in users %}
+                            <option value="{{ user[0] }}" {% if selected_user_ids and user[0]|string in selected_user_ids %}selected{% endif %}>{{ user[1] }}</option>
+                            {% endfor %}
+                        </select>
+                        <p class="text-xs text-gray-600 dark:text-gray-400 mt-1">Hold Ctrl/Cmd to select multiple</p>
+                    </div>
+                    
+                    <!-- Subnet -->
+                    <div>
+                        <label class="block text-sm font-medium mb-1">Subnet</label>
+                        <select name="subnet_id" class="w-full border p-2 rounded-lg bg-gray-300 dark:bg-zinc-900 border-gray-600">
+                            <option value="">All Subnets</option>
+                            {% for subnet in subnets %}
+                            <option value="{{ subnet[0] }}" {% if request.args.get('subnet_id') == subnet[0]|string %}selected{% endif %}>{{ subnet[1] }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    
+                    <!-- Action -->
+                    <div>
+                        <label class="block text-sm font-medium mb-1">Action</label>
+                        <select name="action" class="w-full border p-2 rounded-lg bg-gray-300 dark:bg-zinc-900 border-gray-600">
+                            <option value="">All Actions</option>
+                            {% for a in actions %}
+                            <option value="{{ a }}" {% if request.args.get('action') == a %}selected{% endif %}>{{ a }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    
+                    <!-- Device Name -->
+                    <div>
+                        <label class="block text-sm font-medium mb-1">Device</label>
+                        <select name="device_name" class="w-full border p-2 rounded-lg bg-gray-300 dark:bg-zinc-900 border-gray-600">
+                            <option value="">All Devices</option>
+                            {% for device in devices %}
+                            <option value="{{ device[0] }}" {% if request.args.get('device_name') == device[0] %}selected{% endif %}>{{ device[0] }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    
+                    <!-- Date From -->
+                    <div>
+                        <label class="block text-sm font-medium mb-1">Date From</label>
+                        <input type="date" name="date_from" value="{{ date_from or '' }}" class="w-full border p-2 rounded-lg bg-gray-300 dark:bg-zinc-900 border-gray-600">
+                    </div>
+                    
+                    <!-- Date To -->
+                    <div>
+                        <label class="block text-sm font-medium mb-1">Date To</label>
+                        <input type="date" name="date_to" value="{{ date_to or '' }}" class="w-full border p-2 rounded-lg bg-gray-300 dark:bg-zinc-900 border-gray-600">
+                    </div>
+                </div>
+                
+                <div class="flex gap-2 justify-center">
+                    <button type="submit" class="bg-gray-200 hover:bg-gray-400 dark:bg-zinc-700 dark:hover:bg-zinc-600 hover:cursor-pointer px-4 py-2 rounded-lg flex items-center gap-2">
+                        <i class="fas fa-search"></i>
+                        <span>Filter</span>
+                    </button>
+                    <a href="/audit?expand_filters=1" class="bg-gray-200 hover:bg-gray-400 dark:bg-zinc-700 dark:hover:bg-zinc-600 hover:cursor-pointer px-4 py-2 rounded-lg flex items-center gap-2">
+                        <i class="fas fa-times"></i>
+                        <span>Clear</span>
+                    </a>
+                    <button type="button" id="export-btn" class="bg-gray-200 hover:bg-gray-400 dark:bg-zinc-700 dark:hover:bg-zinc-600 hover:cursor-pointer px-4 py-2 rounded-lg flex items-center gap-2">
+                        <i class="fas fa-file-csv"></i>
+                        <span>Export CSV</span>
+                    </button>
+                </div>
+                </form>
+            </div>
+            
+            <!-- Audit Log Table -->
             <div class="overflow-x-auto">
                 <table class="w-full table-auto bg-gray-200 dark:bg-zinc-800 rounded-lg overflow-hidden">
                     <thead>
                         <tr class="bg-gray-400 dark:bg-zinc-700">
                             <th class="px-4 py-2 text-center">User</th>
                             <th class="px-4 py-2 text-center">Action</th>
-                            <th class="px-4 py-2 text-center">Details</th>
+                            <th class="px-4 py-2 text-center details-cell">Details</th>
                             <th class="px-4 py-2 text-center">Subnet</th>
                             <th class="px-4 py-2 text-center">Timestamp</th>
                         </tr>
@@ -59,7 +121,9 @@
                         <tr class="border-b border-gray-700">
                             <td class="px-4 py-2 text-center">{{ log[1] or 'Unknown' }}</td>
                             <td class="px-4 py-2 text-center">{{ log[2] }}</td>
-                            <td class="px-4 py-2 text-center truncate" title="{{ log[3] }}">{{ log[3][:100] ~ ('…' if log[3]|length > 100 else '') }}</td>
+                            <td class="px-4 py-2 text-center details-cell">
+                                <div class="diff-container" data-details="{{ log[3]|e }}"></div>
+                            </td>
                             <td class="px-4 py-2 text-center">{{ log[4] or 'N/A' }}</td>
                             <td class="px-4 py-2 text-center" data-utc="{{ log[5] }}">{{ log[5] }}</td>
                         </tr>
@@ -67,12 +131,13 @@
                     </tbody>
                 </table>
             </div>
+            
             {% if total_pages > 1 %}
             <div class="flex justify-center mt-6 space-x-2">
                 {% if page > 1 %}
                 {% set prev_args = query_args.copy() %}
                 {% set _ = prev_args.update({'page': page-1}) %}
-                <a href="{{ url_for('audit', **prev_args) }}" class="px-3 py-1 rounded bg-gray-400 hover:bg-gray-200 dark:bg-zinc-700 dark:hover:bg-zinc-600 flex items-center gap-2">
+                <a href="{{ url_for('audit', **prev_args) }}" class="px-3 py-1 rounded bg-gray-400 hover:bg-gray-200 dark:bg-zinc-700 dark:hover:bg-zinc-600 hover:cursor-pointer flex items-center gap-2">
                     <i class="fa fa-angle-left"></i>
                     <span class="hidden sm:inline">Prev</span>
                 </a>
@@ -87,7 +152,7 @@
                 {% if start_page > 1 %}
                     {% set page_args = query_args.copy() %}
                     {% set _ = page_args.update({'page': 1}) %}
-                    <a href="{{ url_for('audit', **page_args) }}" class="px-3 py-1 rounded {{ 'bg-gray-200 dark:bg-gray-500' if 1 == page else 'bg-gray-400 hover:bg-gray-200 dark:bg-zinc-700 dark:hover:bg-zinc-600' }}">1</a>
+                    <a href="{{ url_for('audit', **page_args) }}" class="px-3 py-1 rounded hover:cursor-pointer {{ 'bg-gray-200 dark:bg-gray-500' if 1 == page else 'bg-gray-400 hover:bg-gray-200 dark:bg-zinc-700 dark:hover:bg-zinc-600' }}">1</a>
                     {% if start_page > 2 %}
                         <span class="px-3 py-1 text-gray-600 dark:text-gray-400">…</span>
                     {% endif %}
@@ -97,7 +162,7 @@
                 {% for p in range(start_page, end_page + 1) %}
                     {% set page_args = query_args.copy() %}
                     {% set _ = page_args.update({'page': p}) %}
-                    <a href="{{ url_for('audit', **page_args) }}" class="px-3 py-1 rounded {{ 'bg-gray-200 dark:bg-gray-500' if p == page else 'bg-gray-400 hover:bg-gray-200 dark:bg-zinc-700 dark:hover:bg-zinc-600' }}">{{ p }}</a>
+                    <a href="{{ url_for('audit', **page_args) }}" class="px-3 py-1 rounded hover:cursor-pointer {{ 'bg-gray-200 dark:bg-gray-500' if p == page else 'bg-gray-400 hover:bg-gray-200 dark:bg-zinc-700 dark:hover:bg-zinc-600' }}">{{ p }}</a>
                 {% endfor %}
                 
                 {# Show last page if we're not near the end #}
@@ -107,13 +172,13 @@
                     {% endif %}
                     {% set page_args = query_args.copy() %}
                     {% set _ = page_args.update({'page': total_pages}) %}
-                    <a href="{{ url_for('audit', **page_args) }}" class="px-3 py-1 rounded {{ 'bg-gray-200 dark:bg-gray-500' if total_pages == page else 'bg-gray-400 hover:bg-gray-200 dark:bg-zinc-700 dark:hover:bg-zinc-600' }}">{{ total_pages }}</a>
+                    <a href="{{ url_for('audit', **page_args) }}" class="px-3 py-1 rounded hover:cursor-pointer {{ 'bg-gray-200 dark:bg-gray-500' if total_pages == page else 'bg-gray-400 hover:bg-gray-200 dark:bg-zinc-700 dark:hover:bg-zinc-600' }}">{{ total_pages }}</a>
                 {% endif %}
                 
                 {% if page < total_pages %}
                 {% set next_args = query_args.copy() %}
                 {% set _ = next_args.update({'page': page+1}) %}
-                <a href="{{ url_for('audit', **next_args) }}" class="px-3 py-1 rounded bg-gray-400 hover:bg-gray-200 dark:bg-zinc-700 dark:hover:bg-zinc-600 flex items-center gap-2">
+                <a href="{{ url_for('audit', **next_args) }}" class="px-3 py-1 rounded bg-gray-400 hover:bg-gray-200 dark:bg-zinc-700 dark:hover:bg-zinc-600 hover:cursor-pointer flex items-center gap-2">
                     <span class="hidden sm:inline">Next</span>
                     <i class="fa fa-angle-right"></i>
                 </a>
@@ -124,12 +189,119 @@
     </div>
     <script>
     document.addEventListener('DOMContentLoaded', function() {
+        // Filter toggle functionality
+        const filterToggle = document.getElementById('filter-toggle');
+        const filterForm = document.getElementById('audit-filter-form');
+        const filterArrow = document.getElementById('filter-arrow');
+        
+        if (filterToggle && filterForm && filterArrow) {
+            filterToggle.addEventListener('click', function() {
+                filterForm.classList.toggle('hidden');
+                // Toggle rotation using inline style for better compatibility
+                if (filterForm.classList.contains('hidden')) {
+                    filterArrow.style.transform = 'rotate(0deg)';
+                } else {
+                    filterArrow.style.transform = 'rotate(180deg)';
+                }
+            });
+            
+            // Set initial arrow rotation if form is visible (has active filters or expand_filters param)
+            if (!filterForm.classList.contains('hidden')) {
+                filterArrow.style.transform = 'rotate(180deg)';
+            }
+        }
+        
+        // Format timestamps
         document.querySelectorAll('td[data-utc]').forEach(function(td) {
             const utc = td.getAttribute('data-utc');
             if (utc) {
                 const date = new Date(utc + 'Z');
                 td.textContent = date.toLocaleString();
             }
+        });
+        
+        // Parse and display visual diffs
+        document.querySelectorAll('.diff-container').forEach(function(container) {
+            const details = container.getAttribute('data-details');
+            if (!details) return;
+            
+            // Try to parse common change patterns
+            let html = details;
+            
+            // Pattern 1: "Changed X from 'old' to 'new'"
+            html = html.replace(/Changed (.+?) from ['"](.+?)['"] to ['"](.+?)['"]/gi, function(match, field, oldVal, newVal) {
+                return `Changed ${field} from <span class="diff-removed">${oldVal}</span> to <span class="diff-added">${newVal}</span>`;
+            });
+            
+            // Pattern 2: "Renamed X to Y"
+            html = html.replace(/Renamed (.+?) to ['"](.+?)['"]/gi, function(match, oldVal, newVal) {
+                return `Renamed <span class="diff-removed">${oldVal}</span> to <span class="diff-added">${newVal}</span>`;
+            });
+            
+            // Pattern 3: "Updated X: old -> new"
+            html = html.replace(/Updated (.+?):\s*(.+?)\s*->\s*(.+?)(?:\s|$)/gi, function(match, field, oldVal, newVal) {
+                return `Updated ${field}: <span class="diff-removed">${oldVal}</span> → <span class="diff-added">${newVal}</span>`;
+            });
+            
+            // Pattern 4: "Set X to Y" (when it was previously something else, look for context)
+            html = html.replace(/Set (.+?) to ['"](.+?)['"]/gi, function(match, field, newVal) {
+                return `Set ${field} to <span class="diff-added">${newVal}</span>`;
+            });
+            
+            // Pattern 5: "Removed X" or "Deleted X"
+            html = html.replace(/(Removed|Deleted) ['"](.+?)['"]/gi, function(match, action, val) {
+                return `${action} <span class="diff-removed">${val}</span>`;
+            });
+            
+            // Pattern 6: "Added X"
+            html = html.replace(/Added ['"](.+?)['"]/gi, function(match, val) {
+                return `Added <span class="diff-added">${val}</span>`;
+            });
+            
+            // Pattern 7: "Assigned X to Y" or "Unassigned X from Y"
+            html = html.replace(/(Assigned|Unassigned) (.+?) (to|from) (.+?)(?:\s|$)/gi, function(match, action, item, prep, target) {
+                const actionClass = action === 'Assigned' ? 'diff-added' : 'diff-removed';
+                return `${action} <span class="${actionClass}">${item}</span> ${prep} ${target}`;
+            });
+            
+            // Pattern 8: Generic "from X to Y" pattern
+            html = html.replace(/from ['"](.+?)['"] to ['"](.+?)['"]/gi, function(match, oldVal, newVal) {
+                return `from <span class="diff-removed">${oldVal}</span> to <span class="diff-added">${newVal}</span>`;
+            });
+            
+            container.innerHTML = html || details;
+        });
+        
+        // Export button handler
+        document.getElementById('export-btn').addEventListener('click', function() {
+            const form = document.getElementById('audit-filter-form');
+            const formData = new FormData(form);
+            const params = new URLSearchParams();
+            
+            // Add all form fields to params
+            for (const [key, value] of formData.entries()) {
+                if (value) {
+                    if (key === 'user_ids') {
+                        // Handle multiple user_ids
+                        params.append('user_ids', value);
+                    } else {
+                        params.append(key, value);
+                    }
+                }
+            }
+            
+            // Handle multiple user_ids separately
+            const userSelect = form.querySelector('select[name="user_ids"]');
+            if (userSelect) {
+                const selectedUsers = Array.from(userSelect.selectedOptions).map(opt => opt.value);
+                params.delete('user_ids');
+                selectedUsers.forEach(userId => {
+                    params.append('user_ids', userId);
+                });
+            }
+            
+            // Redirect to export endpoint
+            window.location.href = '/audit/export_csv?' + params.toString();
         });
     });
     </script>
