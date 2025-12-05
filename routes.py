@@ -1962,6 +1962,10 @@ def register_routes(app):
                             try:
                                 cursor.execute('INSERT INTO DeviceType (name, icon_class) VALUES (%s, %s)', (name, icon_class))
                                 conn.commit()
+                                # Invalidate all device caches since they contain device_types list
+                                cache.clear('device:')
+                                cache.clear('devices')
+                                cache.clear('device_list')
                                 logging.info(f"User {user_name} added device type '{name}' with icon '{icon_class}'.")
                             except mysql.connector.IntegrityError as e:
                                 if e.errno == 1062:  # Duplicate entry
@@ -1983,6 +1987,9 @@ def register_routes(app):
                             try:
                                 cursor.execute('UPDATE DeviceType SET name = %s, icon_class = %s WHERE id = %s', (name, icon_class, device_type_id))
                                 conn.commit()
+                                cache.clear('device:')
+                                cache.clear('devices')
+                                cache.clear('device_list')
                                 logging.info(f"User {user_name} edited device type {device_type_id} to '{name}' with icon '{icon_class}'.")
                             except mysql.connector.IntegrityError as e:
                                 if e.errno == 1062:  # Duplicate entry
@@ -2006,6 +2013,10 @@ def register_routes(app):
                             device_type_name = cursor.fetchone()[0]
                             cursor.execute('DELETE FROM DeviceType WHERE id = %s', (device_type_id,))
                             conn.commit()
+                            # Invalidate all device caches since they contain device_types list
+                            cache.clear('device:')
+                            cache.clear('devices')
+                            cache.clear('device_list')
                             logging.info(f"User {user_name} deleted device type '{device_type_name}'.")
             cursor.execute('SELECT id, name, icon_class FROM DeviceType ORDER BY name')
             device_types = cursor.fetchall()
