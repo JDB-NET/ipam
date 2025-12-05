@@ -13,7 +13,7 @@
     <div class="flex-1 flex items-center justify-center mx-4">
         <div class="container py-8 w-full sm:max-w-3/4 pt-20">
             <div class="flex items-center mb-6 relative">
-                <a href="javascript:window.history.back()" class="hidden sm:flex absolute left-0 bg-gray-200 hover:bg-gray-400 dark:bg-zinc-700 dark:hover:bg-zinc-600 items-center justify-center rounded-full w-11 h-11"><i class="fas fa-arrow-left"></i></a>
+                <a href="/" class="hidden sm:flex absolute left-0 bg-gray-200 hover:bg-gray-400 dark:bg-zinc-700 dark:hover:bg-zinc-600 items-center justify-center rounded-full w-11 h-11"><i class="fas fa-arrow-left"></i></a>
                 <h1 class="text-3xl font-bold text-center w-full">{{ subnet.name }} ({{ subnet.cidr }})</h1>
                 <button type="button" id="export-csv" class="hidden sm:flex absolute right-0 bg-gray-200 hover:bg-gray-400 dark:bg-zinc-700 dark:hover:bg-zinc-600 hover:cursor-pointer items-center justify-center rounded-full w-11 h-11 export-csv-btn" title="Export as CSV" data-subnet-id="{{ subnet.id }}">
                     <i class="fas fa-file-csv fa-lg"></i>

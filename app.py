@@ -39,5 +39,9 @@ def inject_env_vars():
 register_routes(app)
 init_db(app)
 
+# Start cache pre-warming in background
+from routes import prewarm_cache
+prewarm_cache(app)
+
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True)

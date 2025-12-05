@@ -69,8 +69,10 @@ document.addEventListener('DOMContentLoaded', function() {
         });
         
         // Pattern 7: "Assigned X to Y" or "Unassigned X from Y"
-        html = html.replace(/(Assigned|Unassigned) (.+?) (to|from) (.+?)(?:\s|$)/gi, function(match, action, item, prep, target) {
+        // Capture everything after "to " or "from " to preserve all spaces in target
+        html = html.replace(/(Assigned|Unassigned) (.+?) (to|from) (.+)$/gi, function(match, action, item, prep, target) {
             const actionClass = action === 'Assigned' ? 'diff-added' : 'diff-removed';
+            // Preserve the space between prep and target
             return `${action} <span class="${actionClass}">${item}</span> ${prep} ${target}`;
         });
         

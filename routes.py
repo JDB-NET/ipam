@@ -12,6 +12,7 @@ import subprocess
 import shutil
 from datetime import datetime
 from werkzeug.utils import secure_filename
+from cache import cache
 
 app = None
 
@@ -142,6 +143,263 @@ def add_audit_log(user_id, action, details=None, subnet_id=None, conn=None):
         conn.commit()
         conn.close()
 
+def invalidate_cache_for_device(device_id):
+    """Invalidate all cache entries related to a device"""
+    cache.invalidate_device(device_id)
+    cache.clear('devices')
+    cache.clear('device_list')
+
+def invalidate_cache_for_subnet(subnet_id):
+    """Invalidate all cache entries related to a subnet"""
+    cache.invalidate_subnet(subnet_id)
+    cache.clear('index')
+    cache.clear('admin')
+
+def prewarm_cache(app):
+    """Pre-warm cache in background by loading all data"""
+    import threading
+    import time
+    
+    def _prewarm():
+        """Background function to pre-warm cache"""
+        # Wait a bit for app to fully initialize
+        time.sleep(2)
+        
+        try:
+            with app.app_context():
+                from flask import current_app
+                conn = get_db_connection(current_app)
+                try:
+                    cursor = conn.cursor()
+                    
+                    # Pre-warm index page (all subnets with utilization)
+                    logging.info("Pre-warming cache: Loading all subnets for index page...")
+                    cursor.execute('SELECT id, name, cidr, site FROM Subnet')
+                    subnets = cursor.fetchall()
+                    sites_subnets = {}
+                    for subnet in subnets:
+                        site = subnet[3] or 'Unassigned'
+                        if site not in sites_subnets:
+                            sites_subnets[site] = []
+                        
+                        subnet_id = subnet[0]
+                        cursor.execute('SELECT COUNT(*) FROM IPAddress WHERE subnet_id = %s', (subnet_id,))
+                        total_ips = cursor.fetchone()[0]
+                        
+                        cursor.execute('''
+                            SELECT COUNT(*) FROM IPAddress ip
+                            WHERE ip.subnet_id = %s AND ip.id IN (SELECT ip_id FROM DeviceIPAddress)
+                        ''', (subnet_id,))
+                        assigned_ips = cursor.fetchone()[0]
+                        
+                        cursor.execute('''
+                            SELECT COUNT(*) FROM IPAddress ip
+                            WHERE ip.subnet_id = %s AND ip.hostname = 'DHCP' AND ip.id NOT IN (SELECT ip_id FROM DeviceIPAddress)
+                        ''', (subnet_id,))
+                        dhcp_ips = cursor.fetchone()[0]
+                        
+                        used_ips = assigned_ips + dhcp_ips
+                        utilization_percent = (used_ips / total_ips * 100) if total_ips > 0 else 0
+                        
+                        sites_subnets[site].append({
+                            'id': subnet[0],
+                            'name': subnet[1],
+                            'cidr': subnet[2],
+                            'utilization': round(utilization_percent, 1)
+                        })
+                    cache.set('index', sites_subnets, ttl=10800)
+                    logging.info(f"Pre-warmed index cache with {len(subnets)} subnets")
+                    
+                    # Pre-warm admin page
+                    logging.info("Pre-warming cache: Loading admin page data...")
+                    cursor.execute('SELECT id, name, cidr, site FROM Subnet ORDER BY site, name')
+                    subnet_rows = cursor.fetchall()
+                    admin_subnets = []
+                    for row in subnet_rows:
+                        subnet_id = row[0]
+                        cursor.execute('SELECT COUNT(*) FROM IPAddress WHERE subnet_id = %s', (subnet_id,))
+                        total_ips = cursor.fetchone()[0]
+                        
+                        cursor.execute('''
+                            SELECT COUNT(*) FROM IPAddress ip
+                            WHERE ip.subnet_id = %s AND ip.id IN (SELECT ip_id FROM DeviceIPAddress)
+                        ''', (subnet_id,))
+                        assigned_ips = cursor.fetchone()[0]
+                        
+                        cursor.execute('''
+                            SELECT COUNT(*) FROM IPAddress ip
+                            WHERE ip.subnet_id = %s AND ip.hostname = 'DHCP' AND ip.id NOT IN (SELECT ip_id FROM DeviceIPAddress)
+                        ''', (subnet_id,))
+                        dhcp_ips = cursor.fetchone()[0]
+                        
+                        available_ips = total_ips - assigned_ips - dhcp_ips
+                        used_ips = assigned_ips + dhcp_ips
+                        utilization_percent = (used_ips / total_ips * 100) if total_ips > 0 else 0
+                        
+                        admin_subnets.append({
+                            'id': row[0],
+                            'name': row[1],
+                            'cidr': row[2],
+                            'site': row[3] or 'Unassigned',
+                            'utilization': {
+                                'percent': round(utilization_percent, 1),
+                                'assigned': assigned_ips,
+                                'used': used_ips,
+                                'total': total_ips
+                            }
+                        })
+                    # Cache with same structure as admin route expects
+                    admin_result = {
+                        'subnets': admin_subnets,
+                        'can_add_subnet': True,  # Will be checked at render time
+                        'can_edit_subnet': True,  # Will be checked at render time
+                        'can_delete_subnet': True  # Will be checked at render time
+                    }
+                    cache.set('admin', admin_result, ttl=10800)
+                    logging.info(f"Pre-warmed admin cache with {len(admin_subnets)} subnets")
+                    
+                    # Pre-warm all subnet detail pages
+                    logging.info("Pre-warming cache: Loading all subnet detail pages...")
+                    for subnet in subnets:
+                        subnet_id = subnet[0]
+                        try:
+                            cursor.execute('SELECT id, name, cidr FROM Subnet WHERE id = %s', (subnet_id,))
+                            subnet_row = cursor.fetchone()
+                            if subnet_row:
+                                cursor.execute('SELECT * FROM IPAddress WHERE subnet_id = %s', (subnet_id,))
+                                ip_addresses = cursor.fetchall()
+                                
+                                cursor.execute('SELECT COUNT(*) FROM IPAddress WHERE subnet_id = %s', (subnet_id,))
+                                total_ips = cursor.fetchone()[0]
+                                
+                                cursor.execute('''
+                                    SELECT COUNT(*) FROM IPAddress ip
+                                    WHERE ip.subnet_id = %s AND ip.id IN (SELECT ip_id FROM DeviceIPAddress)
+                                ''', (subnet_id,))
+                                assigned_ips = cursor.fetchone()[0]
+                                
+                                cursor.execute('''
+                                    SELECT COUNT(*) FROM IPAddress ip
+                                    WHERE ip.subnet_id = %s AND ip.hostname = 'DHCP' AND ip.id NOT IN (SELECT ip_id FROM DeviceIPAddress)
+                                ''', (subnet_id,))
+                                dhcp_ips = cursor.fetchone()[0]
+                                
+                                available_ips = total_ips - assigned_ips - dhcp_ips
+                                used_ips = assigned_ips + dhcp_ips
+                                utilization_percent = (used_ips / total_ips * 100) if total_ips > 0 else 0
+                                
+                                utilization_stats = {
+                                    'total': total_ips,
+                                    'assigned': assigned_ips,
+                                    'dhcp': dhcp_ips,
+                                    'available': available_ips,
+                                    'percent': round(utilization_percent, 1)
+                                }
+                                
+                                cursor.execute('SELECT id, name, description FROM Device')
+                                devices = cursor.fetchall()
+                                device_name_map = {name.lower(): (id, description) for id, name, description in devices}
+                                ip_addresses_with_device = []
+                                for ip in ip_addresses:
+                                    hostname = ip[2]
+                                    device_id = None
+                                    device_description = None
+                                    if hostname:
+                                        match = device_name_map.get(hostname.lower())
+                                        if match:
+                                            device_id, device_description = match
+                                    ip_addresses_with_device.append((ip[0], ip[1], hostname, device_id, device_description))
+                                
+                                subnet_dict = {'id': subnet_row[0], 'name': subnet_row[1], 'cidr': subnet_row[2]}
+                                result = {
+                                    'subnet': subnet_dict,
+                                    'ip_addresses': ip_addresses_with_device,
+                                    'utilization': utilization_stats
+                                }
+                                cache.set(f'subnet:{subnet_id}', result, ttl=10800)
+                        except Exception as e:
+                            logging.error(f"Error pre-warming subnet {subnet_id}: {e}")
+                    logging.info(f"Pre-warmed {len(subnets)} subnet detail pages")
+                    
+                    # Pre-warm all device detail pages
+                    logging.info("Pre-warming cache: Loading all device detail pages...")
+                    cursor.execute('SELECT id FROM Device')
+                    device_ids = [row[0] for row in cursor.fetchall()]
+                    for device_id in device_ids:
+                        try:
+                            cursor.execute('SELECT id, name, description, device_type_id FROM Device WHERE id = %s', (device_id,))
+                            device = cursor.fetchone()
+                            if device:
+                                cursor.execute('SELECT id, name FROM DeviceType ORDER BY name')
+                                device_types = cursor.fetchall()
+                                cursor.execute('SELECT id, name, cidr, site FROM Subnet')
+                                subnets = [dict(id=row[0], name=row[1], cidr=row[2], site=row[3]) for row in cursor.fetchall()]
+                                cursor.execute('''SELECT DeviceIPAddress.id as device_ip_id, IPAddress.ip FROM DeviceIPAddress JOIN IPAddress ON DeviceIPAddress.ip_id = IPAddress.id WHERE DeviceIPAddress.device_id = %s''', (device_id,))
+                                device_ips = [{'device_ip_id': row[0], 'ip': row[1]} for row in cursor.fetchall()]
+                                
+                                cursor.execute('''
+                                    SELECT t.id, t.name, t.color
+                                    FROM DeviceTag dt
+                                    JOIN Tag t ON dt.tag_id = t.id
+                                    WHERE dt.device_id = %s
+                                    ORDER BY t.name
+                                ''', (device_id,))
+                                device_tags = [{'id': row[0], 'name': row[1], 'color': row[2]} for row in cursor.fetchall()]
+                                
+                                cursor.execute('SELECT id, name, color FROM Tag ORDER BY name')
+                                all_tags = [{'id': row[0], 'name': row[1], 'color': row[2]} for row in cursor.fetchall()]
+                                
+                                available_ips_by_subnet = {}
+                                for subnet in subnets:
+                                    cursor.execute('SELECT id, ip FROM IPAddress WHERE subnet_id = %s AND id NOT IN (SELECT ip_id FROM DeviceIPAddress)', (subnet['id'],))
+                                    ips = [{'id': row[0], 'ip': row[1]} for row in cursor.fetchall()]
+                                    cursor.execute('SELECT start_ip, end_ip, excluded_ips FROM DHCPPool WHERE subnet_id = %s', (subnet['id'],))
+                                    dhcp_row = cursor.fetchone()
+                                    if dhcp_row:
+                                        start_ip, end_ip, excluded_ips = dhcp_row
+                                        excluded_list = [ip for ip in (excluded_ips or '').replace(' ', '').split(',') if ip]
+                                        in_range = False
+                                        filtered_ips = []
+                                        for ip_obj in ips:
+                                            ip = ip_obj['ip']
+                                            if ip == start_ip:
+                                                in_range = True
+                                            if ip in excluded_list or not (in_range and ip not in excluded_list):
+                                                filtered_ips.append(ip_obj)
+                                            if ip == end_ip:
+                                                in_range = False
+                                        ips = filtered_ips
+                                    available_ips_by_subnet[subnet['id']] = ips
+                                
+                                result_data = {
+                                    'device': {'id': device[0], 'name': device[1], 'description': device[2], 'device_type_id': device[3]},
+                                    'subnets': subnets,
+                                    'device_ips': device_ips,
+                                    'available_ips_by_subnet': available_ips_by_subnet,
+                                    'device_types': device_types,
+                                    'device_tags': device_tags,
+                                    'all_tags': all_tags,
+                                    'can_assign_device_tag': True,  # Will be checked at render time
+                                    'can_remove_device_tag': True   # Will be checked at render time
+                                }
+                                cache.set(f'device:{device_id}', result_data, ttl=10800)
+                        except Exception as e:
+                            logging.error(f"Error pre-warming device {device_id}: {e}")
+                    logging.info(f"Pre-warmed {len(device_ids)} device detail pages")
+                    
+                    logging.info("Cache pre-warming completed successfully")
+                except Exception as e:
+                    logging.error(f"Error during cache pre-warming: {e}")
+                finally:
+                    conn.close()
+        except Exception as e:
+            logging.error(f"Error in cache pre-warming thread: {e}")
+    
+    # Start pre-warming in background thread
+    thread = threading.Thread(target=_prewarm, daemon=True)
+    thread.start()
+    logging.info("Started background cache pre-warming thread")
+
 def register_routes(app):
     logging.basicConfig(level=logging.INFO)
 
@@ -176,6 +434,11 @@ def register_routes(app):
     @app.route('/')
     @permission_required('view_index')
     def index():
+        cache_key = 'index'
+        cached_result = cache.get(cache_key)
+        if cached_result is not None:
+            return render_with_user('index.html', sites_subnets=cached_result)
+        
         from flask import current_app
         conn = get_db_connection(current_app)
         try:
@@ -214,6 +477,8 @@ def register_routes(app):
                     'cidr': subnet[2],
                     'utilization': round(utilization_percent, 1)
                 })
+            # Cache for 3 hours
+            cache.set(cache_key, sites_subnets, ttl=10800)
             return render_with_user('index.html', sites_subnets=sites_subnets)
         finally:
             conn.close()
@@ -295,6 +560,9 @@ def register_routes(app):
                 cursor = conn.cursor()
                 cursor.execute('INSERT INTO Device (name, device_type_id) VALUES (%s, %s)', (name, device_type_id))
                 conn.commit()
+            # Invalidate cache
+            cache.clear('devices')
+            cache.clear('device_list')
             logging.info(f"User {user_name} added device '{name}' (type {device_type_id}).")
             return redirect(url_for('devices'))
         return render_with_user('add_device.html', device_types=device_types)
@@ -302,6 +570,11 @@ def register_routes(app):
     @app.route('/device/<int:device_id>')
     @permission_required('view_device')
     def device(device_id):
+        cache_key = f'device:{device_id}'
+        cached_result = cache.get(cache_key)
+        if cached_result is not None:
+            return render_with_user('device.html', **cached_result)
+        
         from flask import current_app
         with get_db_connection(current_app) as conn:
             cursor = conn.cursor()
@@ -366,6 +639,8 @@ def register_routes(app):
             cursor = conn.cursor()
             cursor.execute('UPDATE Device SET device_type_id = %s WHERE id = %s', (device_type_id, device_id))
             conn.commit()
+        # Invalidate cache
+        invalidate_cache_for_device(device_id)
         logging.info(f"User {user_name} updated device {device_id} to type {device_type_id}.")
         return redirect(url_for('device', device_id=device_id))
 
@@ -424,6 +699,9 @@ def register_routes(app):
             details = f"Assigned IP {ip} ({subnet_name} {subnet_cidr}) to device {device_name}"
             add_audit_log(session['user_id'], 'device_add_ip', details, subnet_id_val, conn=conn)
             conn.commit()
+        # Invalidate cache
+        invalidate_cache_for_device(device_id)
+        cache.invalidate_subnet(subnet_id_val)
         logging.info(f"User {user_name} assigned IP {ip} to device {device_id}.")
         return redirect(url_for('device', device_id=device_id))
 
@@ -450,6 +728,9 @@ def register_routes(app):
             cursor.execute('DELETE FROM DeviceIPAddress WHERE id = %s', (device_ip_id,))
             cursor.execute('UPDATE IPAddress SET hostname = NULL WHERE id = %s', (ip_id,))
             conn.commit()
+        # Invalidate cache
+        invalidate_cache_for_device(device_id)
+        cache.invalidate_subnet(subnet_id_val)
         logging.info(f"User {user_name} removed IP {ip} from device {device_id}.")
         return redirect(url_for('device', device_id=device_id))
 
@@ -479,6 +760,9 @@ def register_routes(app):
             cursor.execute('INSERT INTO DeviceTag (device_id, tag_id) VALUES (%s, %s)', (device_id, tag_id))
             add_audit_log(session['user_id'], 'assign_device_tag', f"Assigned tag '{tag_name}' to device '{device_name}'", conn=conn)
             conn.commit()
+            # Invalidate cache
+            invalidate_cache_for_device(device_id)
+            cache.clear('devices')
         return redirect(url_for('device', device_id=device_id))
 
     @app.route('/device/<int:device_id>/remove_tag', methods=['POST'])
@@ -503,6 +787,9 @@ def register_routes(app):
             cursor.execute('DELETE FROM DeviceTag WHERE device_id = %s AND tag_id = %s', (device_id, tag_id))
             add_audit_log(session['user_id'], 'remove_device_tag', f"Removed tag '{tag_name}' from device '{device_name}'", conn=conn)
             conn.commit()
+            # Invalidate cache
+            invalidate_cache_for_device(device_id)
+            cache.clear('devices')
         return redirect(url_for('device', device_id=device_id))
 
     @app.route('/delete_device', methods=['POST'])
@@ -525,12 +812,22 @@ def register_routes(app):
                 cursor.execute('DELETE FROM DeviceIPAddress WHERE device_id = %s', (device_id,))
                 cursor.execute('DELETE FROM Device WHERE id = %s', (device_id,))
                 conn.commit()
+        # Invalidate cache
+        invalidate_cache_for_device(device_id)
+        cache.clear('devices')
         logging.info(f"User {user_name} deleted device '{device_name}'.")
         return redirect(url_for('devices'))
 
     @app.route('/subnet/<int:subnet_id>')
     @permission_required('view_subnet')
     def subnet(subnet_id):
+        cache_key = f'subnet:{subnet_id}'
+        cached_result = cache.get(cache_key)
+        if cached_result is not None:
+            return render_with_user('subnet.html', subnet=cached_result['subnet'], 
+                                  ip_addresses=cached_result['ip_addresses'], 
+                                  utilization=cached_result['utilization'])
+        
         from flask import current_app
         with get_db_connection(current_app) as conn:
             cursor = conn.cursor()
@@ -580,7 +877,18 @@ def register_routes(app):
                     if match:
                         device_id, device_description = match
                 ip_addresses_with_device.append((ip[0], ip[1], hostname, device_id, device_description))
-        return render_with_user('subnet.html', subnet={'id': subnet[0], 'name': subnet[1], 'cidr': subnet[2]}, ip_addresses=ip_addresses_with_device, utilization=utilization_stats)
+            
+            subnet_dict = {'id': subnet[0], 'name': subnet[1], 'cidr': subnet[2]}
+            result = {
+                'subnet': subnet_dict,
+                'ip_addresses': ip_addresses_with_device,
+                'utilization': utilization_stats
+            }
+            # Cache for 3 hours
+            cache.set(cache_key, result, ttl=10800)
+            return render_with_user('subnet.html', subnet=subnet_dict, 
+                                  ip_addresses=ip_addresses_with_device, 
+                                  utilization=utilization_stats)
 
     @app.route('/add_subnet', methods=['POST'])
     @permission_required('add_subnet')
@@ -604,6 +912,11 @@ def register_routes(app):
             cursor.executemany('INSERT INTO IPAddress (ip, subnet_id) VALUES (%s, %s)', ip_rows)
             add_audit_log(session['user_id'], 'add_subnet', f"Added subnet {name} ({cidr})", subnet_id, conn=conn)
             conn.commit()
+        # Invalidate cache
+        cache.clear('index')
+        cache.clear('admin')
+        cache.clear('subnet_list')
+        # Note: subnet_id is new, so no need to invalidate specific subnet cache
         logging.info(f"User {user_name} added subnet '{name}' ({cidr}) at site '{site}'.")
         return redirect(url_for('admin'))
 
@@ -625,6 +938,8 @@ def register_routes(app):
                 cursor.execute('UPDATE Subnet SET name = %s, cidr = %s, site = %s WHERE id = %s', (name, cidr, site, subnet_id))
                 add_audit_log(session['user_id'], 'edit_subnet', f"Edited subnet from {old_name} ({old_cidr}) to {name} ({cidr}) at site {site}", subnet_id, conn=conn)
                 conn.commit()
+        # Invalidate cache
+        invalidate_cache_for_subnet(subnet_id)
         logging.info(f"User {user_name} edited subnet {subnet_id}.")
         return redirect(url_for('admin'))
 
@@ -643,16 +958,24 @@ def register_routes(app):
             ip_ids = [row[0] for row in cursor.fetchall()]
             if ip_ids:
                 cursor.executemany('DELETE FROM DeviceIPAddress WHERE ip_id = %s', [(ip_id,) for ip_id in ip_ids])
-                cursor.executemany('UPDATE AuditLog SET subnet_id=NULL WHERE subnet_id = %s', [(subnet_id,) for _ in ip_ids])
+            # Set subnet_id to NULL in audit logs (foreign key will handle this, but doing it explicitly for clarity)
+            cursor.execute('UPDATE AuditLog SET subnet_id=NULL WHERE subnet_id = %s', (subnet_id,))
             cursor.execute('DELETE FROM IPAddress WHERE subnet_id = %s', (subnet_id,))
             cursor.execute('DELETE FROM Subnet WHERE id = %s', (subnet_id,))
             conn.commit()
+        # Invalidate cache
+        invalidate_cache_for_subnet(subnet_id)
         logging.info(f"User {user_name} deleted subnet {subnet_id}.")
         return redirect(url_for('admin'))
 
     @app.route('/admin', methods=['GET', 'POST'])
     @permission_required('view_admin')
     def admin():
+        cache_key = 'admin'
+        cached_result = cache.get(cache_key)
+        if cached_result is not None:
+            return render_with_user('admin.html', **cached_result)
+        
         from flask import current_app
         with get_db_connection(current_app) as conn:
             cursor = conn.cursor()
@@ -693,10 +1016,15 @@ def register_routes(app):
                         'total': total_ips
                     }
                 })
-        return render_with_user('admin.html', subnets=subnets, 
-                               can_add_subnet=has_permission('add_subnet'),
-                               can_edit_subnet=has_permission('edit_subnet'),
-                               can_delete_subnet=has_permission('delete_subnet'))
+        result_data = {
+            'subnets': subnets,
+            'can_add_subnet': has_permission('add_subnet'),
+            'can_edit_subnet': has_permission('edit_subnet'),
+            'can_delete_subnet': has_permission('delete_subnet')
+        }
+        # Cache for 3 hours
+        cache.set(cache_key, result_data, ttl=10800)
+        return render_with_user('admin.html', **result_data)
 
     @app.route('/api-docs')
     @permission_required('view_admin')
@@ -1010,8 +1338,9 @@ def register_routes(app):
             params.extend([search_pattern, search_pattern, search_pattern, search_pattern])
         
         count_query = 'SELECT COUNT(*) FROM (' + query + ') AS count_subquery'
-        with get_db_connection() as conn:
-            cursor = conn.cursor()
+        from flask import current_app
+        with get_db_connection(current_app) as conn:
+            cursor = conn.cursor(buffered=True)
             cursor.execute(count_query, params)
             total_logs = cursor.fetchone()[0]
             query += ' ORDER BY AuditLog.timestamp DESC LIMIT %s OFFSET %s'
@@ -1108,7 +1437,14 @@ def register_routes(app):
     @app.route('/check_update')
     @login_required
     def check_update():
-        """Check for available updates from GitHub"""
+        """Check for available updates from GitHub (cached for 3 hours)"""
+        cache_key = 'check_update'
+        
+        # Check cache first
+        cached_result = cache.get(cache_key)
+        if cached_result is not None:
+            return jsonify(cached_result)
+        
         try:
             # Get current version
             version_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'VERSION')
@@ -1126,6 +1462,7 @@ def register_routes(app):
             latest_version = release_data.get('tag_name', '').lstrip('v')
             
             # Compare versions using semantic versioning
+            result = {'update_available': False}
             if latest_version and latest_version != current_version:
                 # Simple semantic version comparison
                 def version_tuple(v):
@@ -1137,21 +1474,26 @@ def register_routes(app):
                     current_tuple = version_tuple(current_version)
                     latest_tuple = version_tuple(latest_version)
                     # Only show update if latest is actually newer
-                    if latest_tuple <= current_tuple:
-                        return jsonify({'update_available': False})
+                    if latest_tuple > current_tuple:
+                        result = {
+                            'update_available': True,
+                            'current_version': current_version,
+                            'latest_version': latest_version,
+                            'release_url': release_data.get('html_url', '')
+                        }
                 except (ValueError, AttributeError):
                     # Fallback to string comparison if parsing fails
-                    if latest_version == current_version:
-                        return jsonify({'update_available': False})
-                
-                return jsonify({
-                    'update_available': True,
-                    'current_version': current_version,
-                    'latest_version': latest_version,
-                    'release_url': release_data.get('html_url', '')
-                })
-            else:
-                return jsonify({'update_available': False})
+                    if latest_version != current_version:
+                        result = {
+                            'update_available': True,
+                            'current_version': current_version,
+                            'latest_version': latest_version,
+                            'release_url': release_data.get('html_url', '')
+                        }
+            
+            # Cache result for 3 hours (10800 seconds)
+            cache.set(cache_key, result, ttl=10800)
+            return jsonify(result)
                 
         except requests.RequestException as e:
             logging.error(f"Error checking for updates: {e}")
@@ -1402,6 +1744,9 @@ def register_routes(app):
             cursor.execute('UPDATE IPAddress SET hostname = %s WHERE hostname = %s', (new_name, old_name))
             conn.commit()
             add_audit_log(session['user_id'], 'rename_device', f"Renamed device '{old_name}' to '{new_name}'", conn=conn)
+            # Invalidate cache
+            invalidate_cache_for_device(device_id)
+            cache.clear('subnet:')  # Invalidate all subnet caches since hostnames changed
         logging.info(f"User {user_name} renamed device {device_id} from '{old_name}' to '{new_name}'.")
         return redirect(url_for('device', device_id=device_id))
 
@@ -1416,6 +1761,8 @@ def register_routes(app):
             cursor = conn.cursor()
             cursor.execute('UPDATE Device SET description = %s WHERE id = %s', (description, device_id))
             conn.commit()
+        # Invalidate cache
+        invalidate_cache_for_device(device_id)
         logging.info(f"User {user_name} updated description for device {device_id}.")
         return redirect(url_for('device', device_id=device_id))
 

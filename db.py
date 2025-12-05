@@ -3,6 +3,7 @@ import hashlib
 import base64
 import secrets
 import mysql.connector
+import logging
 from flask import current_app
 
 def hash_password(password, salt=None):
@@ -64,8 +65,8 @@ def init_db(app=None):
         details TEXT,
         subnet_id INTEGER,
         timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (user_id) REFERENCES User(id),
-        FOREIGN KEY (subnet_id) REFERENCES Subnet(id)
+        FOREIGN KEY (user_id) REFERENCES User(id) ON DELETE SET NULL,
+        FOREIGN KEY (subnet_id) REFERENCES Subnet(id) ON DELETE SET NULL
     )
     ''')
     cursor.execute('''
@@ -198,6 +199,50 @@ def init_db(app=None):
     cursor.execute("SHOW COLUMNS FROM User LIKE 'api_key'")
     if not cursor.fetchone():
         cursor.execute('ALTER TABLE User ADD COLUMN api_key VARCHAR(255) DEFAULT NULL UNIQUE')
+    
+    # Ensure AuditLog foreign keys have ON DELETE SET NULL to preserve audit logs
+    # This is critical - audit logs should NEVER be deleted, even when referenced entities are deleted
+    try:
+        # Check and update user_id foreign key
+        cursor.execute('''
+            SELECT CONSTRAINT_NAME 
+            FROM information_schema.KEY_COLUMN_USAGE 
+            WHERE TABLE_SCHEMA = DATABASE() 
+            AND TABLE_NAME = 'AuditLog' 
+            AND COLUMN_NAME = 'user_id' 
+            AND REFERENCED_TABLE_NAME = 'User'
+        ''')
+        fk_user = cursor.fetchone()
+        if fk_user:
+            fk_name = fk_user[0]
+            # Drop and recreate with ON DELETE SET NULL
+            cursor.execute(f'ALTER TABLE AuditLog DROP FOREIGN KEY {fk_name}')
+            cursor.execute('ALTER TABLE AuditLog ADD CONSTRAINT fk_auditlog_user FOREIGN KEY (user_id) REFERENCES User(id) ON DELETE SET NULL')
+    except mysql.connector.Error as e:
+        # Foreign key might not exist or already be correct, continue
+        if e.errno != 1025 and e.errno != 1091:  # Not "Cannot drop foreign key" or "Unknown key"
+            logging.warning(f"Could not update AuditLog user_id foreign key: {e}")
+    
+    try:
+        # Check and update subnet_id foreign key
+        cursor.execute('''
+            SELECT CONSTRAINT_NAME 
+            FROM information_schema.KEY_COLUMN_USAGE 
+            WHERE TABLE_SCHEMA = DATABASE() 
+            AND TABLE_NAME = 'AuditLog' 
+            AND COLUMN_NAME = 'subnet_id' 
+            AND REFERENCED_TABLE_NAME = 'Subnet'
+        ''')
+        fk_subnet = cursor.fetchone()
+        if fk_subnet:
+            fk_name = fk_subnet[0]
+            # Drop and recreate with ON DELETE SET NULL
+            cursor.execute(f'ALTER TABLE AuditLog DROP FOREIGN KEY {fk_name}')
+            cursor.execute('ALTER TABLE AuditLog ADD CONSTRAINT fk_auditlog_subnet FOREIGN KEY (subnet_id) REFERENCES Subnet(id) ON DELETE SET NULL')
+    except mysql.connector.Error as e:
+        # Foreign key might not exist or already be correct, continue
+        if e.errno != 1025 and e.errno != 1091:  # Not "Cannot drop foreign key" or "Unknown key"
+            logging.warning(f"Could not update AuditLog subnet_id foreign key: {e}")
     
     # Create Tag table
     cursor.execute('''
