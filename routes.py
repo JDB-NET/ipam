@@ -2071,6 +2071,39 @@ def register_routes(app):
                 site_devices[site].append({'id': device_id, 'name': name, 'description': description})
         return render_with_user('devices_by_type.html', device_type=device_type, icon_class=icon_class, site_devices=site_devices)
 
+    @app.route('/devices/tag/<int:tag_id>')
+    @permission_required('view_devices')
+    def devices_by_tag(tag_id):
+        from flask import current_app
+        with get_db_connection(current_app) as conn:
+            cursor = conn.cursor()
+            cursor.execute('SELECT id, name, color FROM Tag WHERE id = %s', (tag_id,))
+            row = cursor.fetchone()
+            if not row:
+                return f"Tag not found", 404
+            tag_id_db, tag_name, tag_color = row
+            cursor.execute('''
+                SELECT DISTINCT Device.id, Device.name, Device.description, Subnet.site
+                FROM Device
+                JOIN DeviceTag ON Device.id = DeviceTag.device_id
+                LEFT JOIN DeviceIPAddress ON Device.id = DeviceIPAddress.device_id
+                LEFT JOIN IPAddress ON DeviceIPAddress.ip_id = IPAddress.id
+                LEFT JOIN Subnet ON IPAddress.subnet_id = Subnet.id
+                WHERE DeviceTag.tag_id = %s
+            ''', (tag_id,))
+            devices = cursor.fetchall()
+            seen_ids = set()
+            site_devices = {}
+            for device_id, name, description, site in devices:
+                if device_id in seen_ids:
+                    continue
+                seen_ids.add(device_id)
+                site = site or 'Unassigned'
+                if site not in site_devices:
+                    site_devices[site] = []
+                site_devices[site].append({'id': device_id, 'name': name, 'description': description})
+        return render_with_user('devices_by_tag.html', tag_name=tag_name, tag_color=tag_color, site_devices=site_devices)
+
     @app.route('/racks')
     @permission_required('view_racks')
     def racks():
@@ -3865,6 +3898,7 @@ def register_routes(app):
     app.add_url_rule('/device_type_stats', 'device_type_stats', device_type_stats)
     app.add_url_rule('/device_types', 'device_types', device_types, methods=['GET', 'POST'])
     app.add_url_rule('/devices/type/<device_type>', 'devices_by_type', devices_by_type)
+    app.add_url_rule('/devices/tag/<int:tag_id>', 'devices_by_tag', devices_by_tag)
     app.add_url_rule('/racks', 'racks', racks)
     app.add_url_rule('/rack/add', 'add_rack', add_rack, methods=['GET', 'POST'])
     app.add_url_rule('/rack/<int:rack_id>', 'rack', rack)

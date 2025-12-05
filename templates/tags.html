@@ -58,7 +58,7 @@
                                 </td>
                                 <td class="p-3 text-center">
                                     {% if tag.device_count > 0 %}
-                                        <a href="/api/v1/devices/by-tag/{{ tag.name }}" class="text-blue-400 hover:text-blue-600">
+                                        <a href="/devices/tag/{{ tag.id }}" class="text-blue-400 hover:text-blue-600 hover:cursor-pointer">
                                             {{ tag.device_count }}
                                         </a>
                                     {% else %}

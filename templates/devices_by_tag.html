@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ tag_name }} - Tagged Devices</title>
+    <link rel="icon" type="image/png" href="{{ LOGO_PNG }}">
+    <link href="/static/css/output.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css" rel="stylesheet">
+</head>
+<body class="bg-gray-300 text-gray-900 dark:bg-zinc-900 dark:text-gray-100 min-h-screen flex flex-col">
+    {% include 'header.html' %}
+    <div class="flex-1 flex items-center justify-center mx-4">
+        <div class="container py-8 max-w-3xl pt-20">
+            <div class="flex items-center mb-6 relative">
+                <a href="/tags" class="absolute left-0 bg-gray-200 hover:bg-gray-400 dark:bg-zinc-700 dark:hover:bg-zinc-600 flex items-center justify-center rounded-full w-11 h-11"><i class="fas fa-arrow-left"></i></a>
+                <h1 class="text-3xl font-bold text-center w-full">
+                    <div class="flex items-center justify-center space-x-2">
+                        <div class="w-5 h-5 rounded-full border border-gray-600" style="background-color: {{ tag_color }}"></div>
+                        <span>{{ tag_name }} - Tagged Devices</span>
+                    </div>
+                </h1>
+            </div>
+            {% if site_devices %}
+                {% for site, devices in site_devices.items() %}
+                <div class="mb-8">
+                    <h2 class="text-xl font-bold mb-4 dark:text-white">{{ site }}</h2>
+                    <div class="bg-gray-200 dark:bg-zinc-800 rounded-lg shadow-md p-4">
+                        <table class="w-full table-auto mb-2">
+                            <thead>
+                                <tr class="bg-gray-200 dark:bg-zinc-700">
+                                    <th class="px-4 py-2 text-left">Device Name</th>
+                                    <th class="px-4 py-2 text-left">Description</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for device in devices %}
+                                <tr class="border-b border-gray-700">
+                                    <td class="px-4 py-3">
+                                        <a href="/device/{{ device.id }}" class="hover:underline dark:text-white hover:cursor-pointer">{{ device.name }}</a>
+                                    </td>
+                                    <td class="px-4 py-3">{{ device.description or '' }}</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                            <tfoot>
+                                <tr class="bg-gray-200 dark:bg-zinc-900 font-bold">
+                                    <td class="px-4 py-2 text-right" colspan="2">Total: {{ devices|length }}</td>
+                                </tr>
+                            </tfoot>
+                        </table>
+                    </div>
+                </div>
+                {% endfor %}
+            {% else %}
+                <div class="bg-gray-200 dark:bg-zinc-800 rounded-lg shadow-md p-8 text-center">
+                    <p class="text-gray-500">No devices found with this tag.</p>
+                </div>
+            {% endif %}
+        </div>
+    </div>
+</body>
+</html>
+
