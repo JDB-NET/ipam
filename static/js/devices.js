@@ -30,56 +30,6 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     });
 
-    // Search functionality
-    const searchInput = document.getElementById('search');
-    searchInput.addEventListener('keypress', function(event) {
-        if (event.key === 'Enter') {
-            event.preventDefault();
-            const query = this.value.toLowerCase();
-            document.querySelectorAll('.site-group').forEach(siteGroup => {
-                let anyVisible = false;
-                siteGroup.querySelectorAll('.device-list li').forEach(li => {
-                    const deviceName = li.querySelector('span').textContent.toLowerCase();
-                    const ipSpans = li.querySelectorAll('span.inline-block');
-                    let match = deviceName.includes(query);
-                    if (!match) {
-                        ipSpans.forEach(ipSpan => {
-                            if (ipSpan.textContent.toLowerCase().includes(query)) {
-                                match = true;
-                            }
-                        });
-                    }
-                    li.style.display = match ? '' : 'none';
-                    const card = li.querySelector('a');
-                    if (match) {
-                        anyVisible = true;
-                        siteGroup.querySelector('.device-list').classList.remove('hidden');
-                        const icon = siteGroup.querySelector('.expand-btn i');
-                        if (icon && icon.classList.contains('fa-chevron-down')) {
-                            icon.classList.remove('fa-chevron-down');
-                            icon.classList.add('fa-chevron-up');
-                        }
-                        if (card) {
-                            card.style.transition = 'background-color 0.3s';
-                            card.style.backgroundColor = '#2563eb';
-                            card.style.color = '#fff';
-                            setTimeout(() => {
-                                card.style.backgroundColor = '';
-                                card.style.color = '';
-                            }, 2000);
-                        }
-                    } else {
-                        if (card) {
-                            card.style.backgroundColor = '';
-                            card.style.color = '';
-                        }
-                    }
-                });
-                siteGroup.style.display = anyVisible ? '' : 'none';
-            });
-        }
-    });
-
     // Scroll to Top Button
     const scrollToTopButton = document.createElement('button');
     scrollToTopButton.innerHTML = '<i class="fas fa-arrow-up"></i>';

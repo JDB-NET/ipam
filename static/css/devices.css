@@ -1,7 +1,7 @@
 h2 {
     cursor: pointer;
 }
-form:not(.mb-6), .mt-4 {
+.container form:not(.mb-6), .mt-4 {
     display: none;
 }
 .allocated-ips {
