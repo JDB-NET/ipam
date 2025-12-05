@@ -592,6 +592,15 @@ def register_routes(app):
         cache_key = f'device:{device_id}'
         cached_result = cache.get(cache_key)
         if cached_result is not None:
+            # Verify device still exists before using cached result
+            from flask import current_app
+            with get_db_connection(current_app) as conn:
+                cursor = conn.cursor()
+                cursor.execute('SELECT id FROM Device WHERE id = %s', (device_id,))
+                if not cursor.fetchone():
+                    # Device was deleted, clear cache and redirect
+                    cache.delete(cache_key)
+                    return redirect(url_for('devices'))
             return render_with_user('device.html', **cached_result)
         
         from flask import current_app
@@ -599,6 +608,10 @@ def register_routes(app):
             cursor = conn.cursor()
             cursor.execute('SELECT id, name, description, device_type_id FROM Device WHERE id = %s', (device_id,))
             device = cursor.fetchone()
+            if not device:
+                # Device doesn't exist, redirect to devices page
+                return redirect(url_for('devices'))
+            
             cursor.execute('SELECT id, name FROM DeviceType ORDER BY name')
             device_types = cursor.fetchall()
             cursor.execute('SELECT id, name, cidr, site FROM Subnet')
@@ -821,6 +834,7 @@ def register_routes(app):
         device_id = request.form['device_id']
         user_name = get_current_user_name()
         from flask import current_app
+        subnet_ids_to_invalidate = set()
         with get_db_connection(current_app) as conn:
             cursor = conn.cursor()
             cursor.execute('SELECT name FROM Device WHERE id = %s', (device_id,))
@@ -828,6 +842,15 @@ def register_routes(app):
             if device_row:
                 device_name = device_row[0]
                 add_audit_log(session['user_id'], 'delete_device', f"Deleted device {device_name}", conn=conn)
+                # Get subnet IDs for all IPs assigned to this device before deleting
+                cursor.execute('''
+                    SELECT DISTINCT ip.subnet_id 
+                    FROM DeviceIPAddress dia
+                    JOIN IPAddress ip ON dia.ip_id = ip.id
+                    WHERE dia.device_id = %s
+                ''', (device_id,))
+                subnet_ids_to_invalidate = {row[0] for row in cursor.fetchall()}
+                
                 cursor.execute('SELECT ip_id FROM DeviceIPAddress WHERE device_id = %s', (device_id,))
                 ip_ids = [row[0] for row in cursor.fetchall()]
                 if ip_ids:
@@ -838,6 +861,9 @@ def register_routes(app):
         # Invalidate cache
         invalidate_cache_for_device(device_id)
         cache.clear('devices')
+        # Invalidate subnet caches for all subnets that had IPs assigned to this device
+        for subnet_id in subnet_ids_to_invalidate:
+            cache.invalidate_subnet(subnet_id)
         logging.info(f"User {user_name} deleted device '{device_name}'.")
         return redirect(url_for('devices'))
 
@@ -2554,6 +2580,7 @@ def register_routes(app):
     def api_delete_device(device_id):
         """Delete a device"""
         from flask import current_app
+        subnet_ids_to_invalidate = set()
         with get_db_connection(current_app) as conn:
             cursor = conn.cursor()
             cursor.execute('SELECT name FROM Device WHERE id = %s', (device_id,))
@@ -2561,6 +2588,15 @@ def register_routes(app):
             if not device:
                 return jsonify({'error': 'Device not found'}), 404
             device_name = device[0]
+            # Get subnet IDs for all IPs assigned to this device before deleting
+            cursor.execute('''
+                SELECT DISTINCT ip.subnet_id 
+                FROM DeviceIPAddress dia
+                JOIN IPAddress ip ON dia.ip_id = ip.id
+                WHERE dia.device_id = %s
+            ''', (device_id,))
+            subnet_ids_to_invalidate = {row[0] for row in cursor.fetchall()}
+            
             cursor.execute('SELECT ip_id FROM DeviceIPAddress WHERE device_id = %s', (device_id,))
             ip_ids = [row[0] for row in cursor.fetchall()]
             if ip_ids:
@@ -2569,6 +2605,10 @@ def register_routes(app):
             cursor.execute('DELETE FROM Device WHERE id = %s', (device_id,))
             add_audit_log(request.api_user['id'], 'delete_device', f"Deleted device {device_name}", conn=conn)
             conn.commit()
+        invalidate_cache_for_device(device_id)
+        # Invalidate subnet caches for all subnets that had IPs assigned to this device
+        for subnet_id in subnet_ids_to_invalidate:
+            cache.invalidate_subnet(subnet_id)
         return jsonify({'message': 'Device deleted successfully', 'device': {'id': device_id, 'name': device_name}})
     
     @app.route('/api/v1/devices/<int:device_id>/ips', methods=['POST'])
