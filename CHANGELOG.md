@@ -1,5 +1,31 @@
 # Changelog
 
+## [1.6.0](https://github.com/JDB-NET/ipam/compare/v1.5.1...v1.6.0) (2025-12-05)
+
+
+### Features
+
+* :sparkles: backup and restore ([707846b](https://github.com/JDB-NET/ipam/commit/707846bb3c717df9223ea7103e29efc6e671e16d))
+* :sparkles: bulk operations ([2163be8](https://github.com/JDB-NET/ipam/commit/2163be8f79b579e38944a689915a18d5c35f8d3a))
+* :sparkles: global search ([3e8965d](https://github.com/JDB-NET/ipam/commit/3e8965de6f19b3b382e236b08df685401205f356))
+* :sparkles: in memory cache ([3a9250f](https://github.com/JDB-NET/ipam/commit/3a9250f5b0c14bfc6a807fe2948bbc852a652047))
+* :sparkles: subnet utilisation stats ([f98e92d](https://github.com/JDB-NET/ipam/commit/f98e92da062640d47bec3516def0efde3aebd058))
+* :sparkles: update available notification ([730b870](https://github.com/JDB-NET/ipam/commit/730b8701db81f5e03760a25209baeab2f81116fa))
+
+
+### Refactoring
+
+* :art: database indexing and optimisation ([47f68fd](https://github.com/JDB-NET/ipam/commit/47f68fd27cf62d0e0d2af55089bc0556043c12ff))
+* :art: header link to github releases ([61e3200](https://github.com/JDB-NET/ipam/commit/61e320020724e437d8a607e7341b12b2fe6f794d))
+* :art: improved audit log filtering ([f016598](https://github.com/JDB-NET/ipam/commit/f0165985fc194fd3a3e460b52447a5511908ed91))
+* :art: js ([1d9209a](https://github.com/JDB-NET/ipam/commit/1d9209a714a6d0b7d1901b6e3470f5265e0171a6))
+* :art: tidy nav bar ([69588d6](https://github.com/JDB-NET/ipam/commit/69588d6518571d8de55c718c14176bb78cb19ee1))
+
+
+### CI/CD
+
+* :rocket: include all commit types ([f6795f5](https://github.com/JDB-NET/ipam/commit/f6795f52815a2d599840c8ed83c99ad690a046c8))
+
 ## [1.5.1](https://github.com/JDB-NET/ipam/compare/v1.5.0...v1.5.1) (2025-12-04)
 
 
