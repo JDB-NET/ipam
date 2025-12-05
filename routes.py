@@ -1925,6 +1925,97 @@ def register_routes(app):
                 download_name=filename
             )
 
+    @app.route('/search')
+    @login_required
+    def search():
+        query = request.args.get('q', '').strip()
+        results = {
+            'subnets': [],
+            'ips': [],
+            'devices': [],
+            'tags': [],
+            'racks': [],
+            'sites': []
+        }
+        
+        if query:
+            from flask import current_app
+            conn = get_db_connection(current_app)
+            try:
+                cursor = conn.cursor()
+                search_pattern = f'%{query}%'
+                
+                # Search Subnets (name, cidr, site)
+                cursor.execute('''
+                    SELECT id, name, cidr, site 
+                    FROM Subnet 
+                    WHERE name LIKE %s OR cidr LIKE %s OR site LIKE %s
+                    ORDER BY site, name
+                ''', (search_pattern, search_pattern, search_pattern))
+                results['subnets'] = [{'id': row[0], 'name': row[1], 'cidr': row[2], 'site': row[3] or 'Unassigned'} 
+                                     for row in cursor.fetchall()]
+                
+                # Search IP Addresses (ip, hostname)
+                cursor.execute('''
+                    SELECT ip.id, ip.ip, ip.hostname, ip.subnet_id, s.name, s.cidr, s.site
+                    FROM IPAddress ip
+                    JOIN Subnet s ON ip.subnet_id = s.id
+                    WHERE ip.ip LIKE %s OR ip.hostname LIKE %s
+                    ORDER BY ip.ip
+                ''', (search_pattern, search_pattern))
+                results['ips'] = [{'id': row[0], 'ip': row[1], 'hostname': row[2], 
+                                  'subnet_id': row[3], 'subnet_name': row[4], 
+                                  'subnet_cidr': row[5], 'site': row[6] or 'Unassigned'} 
+                                 for row in cursor.fetchall()]
+                
+                # Search Devices (name, description)
+                cursor.execute('''
+                    SELECT id, name, description 
+                    FROM Device 
+                    WHERE name LIKE %s OR description LIKE %s
+                    ORDER BY name
+                ''', (search_pattern, search_pattern))
+                results['devices'] = [{'id': row[0], 'name': row[1], 'description': row[2] or ''} 
+                                     for row in cursor.fetchall()]
+                
+                # Search Tags (name, description)
+                cursor.execute('''
+                    SELECT id, name, description 
+                    FROM Tag 
+                    WHERE name LIKE %s OR description LIKE %s
+                    ORDER BY name
+                ''', (search_pattern, search_pattern))
+                results['tags'] = [{'id': row[0], 'name': row[1], 'description': row[2] or ''} 
+                                  for row in cursor.fetchall()]
+                
+                # Search Racks (name, site)
+                cursor.execute('''
+                    SELECT id, name, site, height_u 
+                    FROM Rack 
+                    WHERE name LIKE %s OR site LIKE %s
+                    ORDER BY site, name
+                ''', (search_pattern, search_pattern))
+                results['racks'] = [{'id': row[0], 'name': row[1], 'site': row[2], 'height_u': row[3]} 
+                                   for row in cursor.fetchall()]
+                
+                # Get unique sites from subnets and racks
+                all_sites = set()
+                for subnet in results['subnets']:
+                    all_sites.add(subnet['site'])
+                for rack in results['racks']:
+                    all_sites.add(rack['site'])
+                for ip in results['ips']:
+                    all_sites.add(ip['site'])
+                
+                # Filter sites that match the query
+                matching_sites = [site for site in all_sites if query.lower() in site.lower()]
+                results['sites'] = sorted(matching_sites)
+                
+            finally:
+                conn.close()
+        
+        return render_with_user('search.html', query=query, results=results)
+
     @app.route('/help')
     @permission_required('view_help')
     def help():
@@ -3304,6 +3395,7 @@ def register_routes(app):
     app.add_url_rule('/rack/<int:rack_id>/remove_device', 'rack_remove_device', rack_remove_device, methods=['POST'])
     app.add_url_rule('/rack/<int:rack_id>/delete', 'delete_rack', delete_rack, methods=['POST'])
     app.add_url_rule('/rack/<int:rack_id>/export_csv', 'export_rack_csv', export_rack_csv)
+    app.add_url_rule('/search', 'search', search)
     app.add_url_rule('/help', 'help', help)
     app.add_url_rule('/backup', 'backup', backup, methods=['GET', 'POST'])
     app.add_url_rule('/backup/create', 'create_backup', create_backup, methods=['POST'])

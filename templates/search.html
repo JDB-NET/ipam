@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Search - {{ NAME }} IPAM</title>
+    <link rel="icon" type="image/png" href="{{ LOGO_PNG }}">
+    <link href="/static/css/output.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css" rel="stylesheet">
+</head>
+<body class="bg-gray-300 text-gray-900 dark:bg-zinc-900 dark:text-gray-100 min-h-screen flex flex-col">
+    {% include 'header.html' %}
+    <div class="flex-1 container mx-auto px-4 py-8 pt-20">
+        <div class="max-w-6xl mx-auto">
+            <h1 class="text-3xl font-bold mb-6">Search Results</h1>
+            
+            {% if query %}
+            <p class="text-lg mb-6">Search results for: <span class="font-semibold">"{{ query }}"</span></p>
+            {% else %}
+            <p class="text-lg mb-6 text-gray-600 dark:text-gray-400">Enter a search query to find IPs, devices, subnets, tags, racks, and sites.</p>
+            {% endif %}
+            
+            {% if query %}
+            {% set total_results = results.subnets|length + results.ips|length + results.devices|length + results.tags|length + results.racks|length + results.sites|length %}
+            
+            {% if total_results == 0 %}
+            <div class="bg-gray-200 dark:bg-zinc-800 rounded-lg shadow-md p-8 text-center">
+                <i class="fas fa-search text-4xl text-gray-400 mb-4"></i>
+                <p class="text-xl font-semibold mb-2">No results found</p>
+                <p class="text-gray-600 dark:text-gray-400">Try a different search term or check your spelling.</p>
+            </div>
+            {% else %}
+            <div class="space-y-6">
+                <!-- Subnets -->
+                {% if results.subnets %}
+                <div class="bg-gray-200 dark:bg-zinc-800 rounded-lg shadow-md p-6">
+                    <h2 class="text-2xl font-bold mb-4 flex items-center">
+                        <i class="fas fa-network-wired mr-2"></i>
+                        Subnets ({{ results.subnets|length }})
+                    </h2>
+                    <div class="space-y-2">
+                        {% for subnet in results.subnets %}
+                        <a href="/subnet/{{ subnet.id }}" class="block p-3 bg-gray-300 dark:bg-zinc-900 hover:bg-gray-100 dark:hover:bg-zinc-700 rounded-lg transition-colors">
+                            <div class="flex items-center justify-between">
+                                <div>
+                                    <p class="font-semibold text-lg">{{ subnet.name }}</p>
+                                    <p class="text-sm text-gray-600 dark:text-gray-400">{{ subnet.cidr }}</p>
+                                </div>
+                                <div class="text-right">
+                                    <p class="text-sm text-gray-600 dark:text-gray-400">{{ subnet.site }}</p>
+                                </div>
+                            </div>
+                        </a>
+                        {% endfor %}
+                    </div>
+                </div>
+                {% endif %}
+                
+                <!-- IP Addresses -->
+                {% if results.ips %}
+                <div class="bg-gray-200 dark:bg-zinc-800 rounded-lg shadow-md p-6">
+                    <h2 class="text-2xl font-bold mb-4 flex items-center">
+                        <i class="fas fa-map-marker-alt mr-2"></i>
+                        IP Addresses ({{ results.ips|length }})
+                    </h2>
+                    <div class="space-y-2">
+                        {% for ip in results.ips %}
+                        <a href="/subnet/{{ ip.subnet_id }}#ip-{{ ip.id }}" class="block p-3 bg-gray-300 dark:bg-zinc-900 hover:bg-gray-100 dark:hover:bg-zinc-700 rounded-lg transition-colors">
+                            <div class="flex items-center justify-between">
+                                <div>
+                                    <p class="font-semibold text-lg">{{ ip.ip }}</p>
+                                    {% if ip.hostname %}
+                                    <p class="text-sm text-gray-600 dark:text-gray-400">{{ ip.hostname }}</p>
+                                    {% endif %}
+                                    <p class="text-sm text-gray-600 dark:text-gray-400">{{ ip.subnet_name }} ({{ ip.subnet_cidr }})</p>
+                                </div>
+                                <div class="text-right">
+                                    <p class="text-sm text-gray-600 dark:text-gray-400">{{ ip.site }}</p>
+                                </div>
+                            </div>
+                        </a>
+                        {% endfor %}
+                    </div>
+                </div>
+                {% endif %}
+                
+                <!-- Devices -->
+                {% if results.devices %}
+                <div class="bg-gray-200 dark:bg-zinc-800 rounded-lg shadow-md p-6">
+                    <h2 class="text-2xl font-bold mb-4 flex items-center">
+                        <i class="fas fa-server mr-2"></i>
+                        Devices ({{ results.devices|length }})
+                    </h2>
+                    <div class="space-y-2">
+                        {% for device in results.devices %}
+                        <a href="/device/{{ device.id }}" class="block p-3 bg-gray-300 dark:bg-zinc-900 hover:bg-gray-100 dark:hover:bg-zinc-700 rounded-lg transition-colors">
+                            <div>
+                                <p class="font-semibold text-lg">{{ device.name }}</p>
+                                {% if device.description %}
+                                <p class="text-sm text-gray-600 dark:text-gray-400">{{ device.description }}</p>
+                                {% endif %}
+                            </div>
+                        </a>
+                        {% endfor %}
+                    </div>
+                </div>
+                {% endif %}
+                
+                <!-- Tags -->
+                {% if results.tags %}
+                <div class="bg-gray-200 dark:bg-zinc-800 rounded-lg shadow-md p-6">
+                    <h2 class="text-2xl font-bold mb-4 flex items-center">
+                        <i class="fas fa-tags mr-2"></i>
+                        Tags ({{ results.tags|length }})
+                    </h2>
+                    <div class="space-y-2">
+                        {% for tag in results.tags %}
+                        <a href="/tags" class="block p-3 bg-gray-300 dark:bg-zinc-900 hover:bg-gray-100 dark:hover:bg-zinc-700 rounded-lg transition-colors">
+                            <div>
+                                <p class="font-semibold text-lg">{{ tag.name }}</p>
+                                {% if tag.description %}
+                                <p class="text-sm text-gray-600 dark:text-gray-400">{{ tag.description }}</p>
+                                {% endif %}
+                            </div>
+                        </a>
+                        {% endfor %}
+                    </div>
+                </div>
+                {% endif %}
+                
+                <!-- Racks -->
+                {% if results.racks %}
+                <div class="bg-gray-200 dark:bg-zinc-800 rounded-lg shadow-md p-6">
+                    <h2 class="text-2xl font-bold mb-4 flex items-center">
+                        <i class="fas fa-th mr-2"></i>
+                        Racks ({{ results.racks|length }})
+                    </h2>
+                    <div class="space-y-2">
+                        {% for rack in results.racks %}
+                        <a href="/rack/{{ rack.id }}" class="block p-3 bg-gray-300 dark:bg-zinc-900 hover:bg-gray-100 dark:hover:bg-zinc-700 rounded-lg transition-colors">
+                            <div class="flex items-center justify-between">
+                                <div>
+                                    <p class="font-semibold text-lg">{{ rack.name }}</p>
+                                    <p class="text-sm text-gray-600 dark:text-gray-400">{{ rack.height_u }}U</p>
+                                </div>
+                                <div class="text-right">
+                                    <p class="text-sm text-gray-600 dark:text-gray-400">{{ rack.site }}</p>
+                                </div>
+                            </div>
+                        </a>
+                        {% endfor %}
+                    </div>
+                </div>
+                {% endif %}
+                
+                <!-- Sites -->
+                {% if results.sites %}
+                <div class="bg-gray-200 dark:bg-zinc-800 rounded-lg shadow-md p-6">
+                    <h2 class="text-2xl font-bold mb-4 flex items-center">
+                        <i class="fas fa-map-marker-alt mr-2"></i>
+                        Sites ({{ results.sites|length }})
+                    </h2>
+                    <div class="space-y-2">
+                        {% for site in results.sites %}
+                        <div class="p-3 bg-gray-300 dark:bg-zinc-900 rounded-lg">
+                            <p class="font-semibold text-lg">{{ site }}</p>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+                {% endif %}
+            </div>
+            {% endif %}
+            {% endif %}
+        </div>
+    </div>
+</body>
+</html>
+

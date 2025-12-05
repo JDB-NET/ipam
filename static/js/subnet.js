@@ -1,5 +1,14 @@
 document.addEventListener('DOMContentLoaded', () => {
-    const form = document.querySelector('form');
+    // Only target the form on the subnet page, not the header search form
+    // Look for a form that's not in the header (header forms have action="/search")
+    const allForms = document.querySelectorAll('form');
+    let form = null;
+    for (let f of allForms) {
+        if (f.action !== '/search' && f.method === 'POST') {
+            form = f;
+            break;
+        }
+    }
     if (form) {
         // Check if search input already exists to prevent duplicates
         if (!document.querySelector('input[placeholder="Search by IP or Hostname"]')) {
@@ -93,4 +102,34 @@ document.addEventListener('DOMContentLoaded', () => {
     scrollToTopButton.addEventListener('click', () => {
         window.scrollTo({ top: 0, behavior: 'smooth' });
     });
+
+    // Force scrollbar thumb to render on page load
+    // This fixes the issue where scrollbar thumb is missing on initial page load
+    // The scrollbar only renders its thumb after a scroll event has occurred
+    requestAnimationFrame(() => {
+        const isScrollable = document.documentElement.scrollHeight > document.documentElement.clientHeight;
+        if (isScrollable && window.scrollY === 0) {
+            // Trigger a minimal scroll to force scrollbar rendering, then scroll back
+            window.scrollBy(0, 1);
+            requestAnimationFrame(() => {
+                window.scrollBy(0, -1);
+            });
+        }
+    });
+
+    // Scroll to IP anchor if present in URL hash
+    if (window.location.hash) {
+        const hash = window.location.hash.substring(1);
+        const element = document.getElementById(hash);
+        if (element) {
+            setTimeout(() => {
+                element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                // Highlight the row briefly
+                element.style.backgroundColor = 'rgba(59, 130, 246, 0.5)';
+                setTimeout(() => {
+                    element.style.backgroundColor = '';
+                }, 3000);
+            }, 100);
+        }
+    }
 });
