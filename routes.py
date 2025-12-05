@@ -1285,6 +1285,9 @@ def register_routes(app):
                                              (name, color, description))
                                 add_audit_log(session['user_id'], 'add_tag', f"Added tag '{name}'", conn=conn)
                                 conn.commit()
+                                # Invalidate device caches since they contain tags
+                                cache.clear('device:')
+                                cache.clear('devices')
                             except mysql.connector.IntegrityError:
                                 error = 'Tag name already exists.'
                 
@@ -1305,6 +1308,9 @@ def register_routes(app):
                                              (name, color, description, tag_id))
                                 add_audit_log(session['user_id'], 'edit_tag', f"Updated tag '{name}'", conn=conn)
                                 conn.commit()
+                                # Invalidate device caches since they contain tags
+                                cache.clear('device:')
+                                cache.clear('devices')
                             except mysql.connector.IntegrityError:
                                 error = 'Tag name already exists.'
                 
@@ -1318,6 +1324,9 @@ def register_routes(app):
                         cursor.execute('DELETE FROM Tag WHERE id = %s', (tag_id,))
                         add_audit_log(session['user_id'], 'delete_tag', f"Deleted tag '{tag_name}'", conn=conn)
                         conn.commit()
+                        # Invalidate device caches since they contain tags
+                        cache.clear('device:')
+                        cache.clear('devices')
             
             # Get all tags with device counts
             cursor.execute('''
@@ -1890,6 +1899,10 @@ def register_routes(app):
                         conn.commit()
                         dhcp_pool = None
                         add_audit_log(session['user_id'], 'dhcp_pool_remove', f"Removed DHCP pool for subnet {subnet[1]} ({subnet[2]})", subnet_id, conn=conn)
+                        # Invalidate subnet cache and related caches
+                        cache.invalidate_subnet(subnet_id)
+                        cache.clear('index')
+                        cache.clear('admin')
                     else:
                         start_ip = request.form['start_ip']
                         end_ip = request.form['end_ip']
@@ -1920,6 +1933,10 @@ def register_routes(app):
                             conn.commit()
                             dhcp_pool = {'start_ip': start_ip, 'end_ip': end_ip, 'excluded_ips': excluded_ips}
                             add_audit_log(session['user_id'], action, details, subnet_id, conn=conn)
+                            # Invalidate subnet cache and related caches
+                            cache.invalidate_subnet(subnet_id)
+                            cache.clear('index')
+                            cache.clear('admin')
             return render_with_user('dhcp.html', subnet={'id': subnet[0], 'name': subnet[1]}, dhcp_pool=dhcp_pool, error=error)
 
     @app.route('/device_type_stats')
@@ -3117,6 +3134,10 @@ def register_routes(app):
                     conn=conn
                 )
                 conn.commit()
+                # Invalidate subnet cache and related caches
+                cache.invalidate_subnet(subnet_id)
+                cache.clear('index')
+                cache.clear('admin')
                 return jsonify({'message': 'DHCP pool removed successfully'})
             
             pools = data.get('pools')
@@ -3167,6 +3188,10 @@ def register_routes(app):
             
             add_audit_log(request.api_user['id'], action, details, subnet_id, conn=conn)
             conn.commit()
+        # Invalidate subnet cache and related caches
+        cache.invalidate_subnet(subnet_id)
+        cache.clear('index')
+        cache.clear('admin')
         return jsonify({'message': 'DHCP pools configured successfully', 'pool': {'start_ip': start_ip, 'end_ip': end_ip, 'excluded_ips': excluded_list}})
     
     # Tags API
@@ -3207,6 +3232,9 @@ def register_routes(app):
                 tag_id = cursor.lastrowid
                 add_audit_log(request.api_user['id'], 'add_tag', f"Added tag '{name}'", conn=conn)
                 conn.commit()
+                # Invalidate device caches since they contain tags
+                cache.clear('device:')
+                cache.clear('devices')
                 return jsonify({'id': tag_id, 'name': name, 'color': color, 'description': description}), 201
             except mysql.connector.IntegrityError:
                 return jsonify({'error': 'Tag name already exists'}), 400
@@ -3276,6 +3304,9 @@ def register_routes(app):
                 cursor.execute(f'UPDATE Tag SET {", ".join(updates)} WHERE id = %s', values)
                 add_audit_log(request.api_user['id'], 'edit_tag', f"Updated tag '{current_name}'", conn=conn)
                 conn.commit()
+                # Invalidate device caches since they contain tags
+                cache.clear('device:')
+                cache.clear('devices')
                 return jsonify({'message': 'Tag updated successfully'})
             except mysql.connector.IntegrityError:
                 return jsonify({'error': 'Tag name already exists'}), 400
@@ -3295,6 +3326,9 @@ def register_routes(app):
             cursor.execute('DELETE FROM Tag WHERE id = %s', (tag_id,))
             add_audit_log(request.api_user['id'], 'delete_tag', f"Deleted tag '{tag_name}'", conn=conn)
             conn.commit()
+        # Invalidate device caches since they contain tags
+        cache.clear('device:')
+        cache.clear('devices')
         return jsonify({'message': 'Tag deleted successfully'})
     
     @app.route('/api/v1/devices/<int:device_id>/tags', methods=['GET'])
@@ -3348,6 +3382,8 @@ def register_routes(app):
             cursor.execute('INSERT INTO DeviceTag (device_id, tag_id) VALUES (%s, %s)', (device_id, tag_id))
             add_audit_log(request.api_user['id'], 'assign_device_tag', f"Assigned tag '{tag_name}' to device '{device_name}'", conn=conn)
             conn.commit()
+        invalidate_cache_for_device(device_id)
+        cache.clear('devices')
         return jsonify({'message': 'Tag assigned successfully'})
     
     @app.route('/api/v1/devices/<int:device_id>/tags/<int:tag_id>', methods=['DELETE'])
@@ -3376,6 +3412,8 @@ def register_routes(app):
             cursor.execute('DELETE FROM DeviceTag WHERE device_id = %s AND tag_id = %s', (device_id, tag_id))
             add_audit_log(request.api_user['id'], 'remove_device_tag', f"Removed tag '{tag_name}' from device '{device_name}'", conn=conn)
             conn.commit()
+        invalidate_cache_for_device(device_id)
+        cache.clear('devices')
         return jsonify({'message': 'Tag removed successfully'})
     
     @app.route('/api/v1/devices/by-tag/<tag_identifier>', methods=['GET'])
@@ -3599,6 +3637,7 @@ def register_routes(app):
         results = {'success': [], 'failed': []}
         
         from flask import current_app
+        subnet_ids_to_invalidate = set()
         with get_db_connection(current_app) as conn:
             cursor = conn.cursor()
             cursor.execute('SELECT name FROM Device WHERE id = %s', (device_id,))
@@ -3617,6 +3656,7 @@ def register_routes(app):
                         continue
                     
                     ip, subnet_id = ip_row[0], ip_row[1]
+                    subnet_ids_to_invalidate.add(subnet_id)
                     
                     # Check if IP is already assigned
                     cursor.execute('SELECT id FROM DeviceIPAddress WHERE ip_id = %s', (ip_id,))
@@ -3661,6 +3701,10 @@ def register_routes(app):
             
             conn.commit()
         
+        # Invalidate device and subnet caches
+        invalidate_cache_for_device(device_id)
+        for subnet_id in subnet_ids_to_invalidate:
+            cache.invalidate_subnet(subnet_id)
         return jsonify(results)
     
     @app.route('/bulk/create_devices', methods=['POST'])
@@ -3687,6 +3731,9 @@ def register_routes(app):
                     results['failed'].append({'name': name, 'reason': str(e)})
             conn.commit()
         
+        # Invalidate devices cache
+        cache.clear('devices')
+        cache.clear('device_list')
         logging.info(f"User {user_name} bulk created {len(results['success'])} devices.")
         return jsonify(results)
     
@@ -3729,6 +3776,10 @@ def register_routes(app):
                         results['failed'].append({'device_id': device_id, 'tag_id': tag_id, 'reason': str(e)})
             conn.commit()
         
+        # Invalidate device caches for all affected devices
+        for device_id in device_ids:
+            invalidate_cache_for_device(device_id)
+        cache.clear('devices')
         logging.info(f"User {user_name} bulk assigned tags to {len(device_ids)} devices.")
         return jsonify(results)
     

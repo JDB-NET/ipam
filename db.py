@@ -133,6 +133,7 @@ def init_db(app=None):
         FOREIGN KEY (device_id) REFERENCES Device(id) ON DELETE CASCADE
     )
     ''')
+    # Initialize default device types only if table is empty
     cursor.execute('SELECT COUNT(*) FROM DeviceType')
     if cursor.fetchone()[0] == 0:
         cursor.executemany('INSERT INTO DeviceType (name, icon_class) VALUES (%s, %s)', [
@@ -144,12 +145,20 @@ def init_db(app=None):
             ('Printer', 'fa-print'),
             ('Other', 'fa-question')
         ])
+        conn.commit()  # Commit the inserts before querying
+    
+    # Add device_type_id column if it doesn't exist
     cursor.execute("SHOW COLUMNS FROM Device LIKE 'device_type_id'")
     if not cursor.fetchone():
         cursor.execute('ALTER TABLE Device ADD COLUMN device_type_id INTEGER DEFAULT NULL')
-    cursor.execute("SELECT id FROM DeviceType WHERE name='Other'")
-    other_id = cursor.fetchone()[0]
-    cursor.execute('UPDATE Device SET device_type_id = %s WHERE device_type_id IS NULL', (other_id,))
+    
+    # Set default device_type_id for devices that don't have one
+    # Use the first available device type, or leave NULL if no types exist
+    cursor.execute('SELECT id FROM DeviceType ORDER BY id LIMIT 1')
+    first_type_result = cursor.fetchone()
+    if first_type_result:
+        first_type_id = first_type_result[0]
+        cursor.execute('UPDATE Device SET device_type_id = %s WHERE device_type_id IS NULL', (first_type_id,))
     try:
         cursor.execute('ALTER TABLE Device ADD CONSTRAINT fk_device_type FOREIGN KEY (device_type_id) REFERENCES DeviceType(id)')
     except mysql.connector.Error as e:
