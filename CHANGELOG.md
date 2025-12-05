@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.6.1](https://github.com/JDB-NET/ipam/compare/v1.6.0...v1.6.1) (2025-12-05)
+
+
+### Bug Fixes
+
+* :bug: invalidate subnet cache when device is deleted ([286bf4b](https://github.com/JDB-NET/ipam/commit/286bf4b665e6352dea7b14753f080fa5cabb7926))
+
 ## [1.6.0](https://github.com/JDB-NET/ipam/compare/v1.5.1...v1.6.0) (2025-12-05)
 
 
