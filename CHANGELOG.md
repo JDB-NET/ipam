@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.7.0](https://github.com/JDB-NET/ipam/compare/v1.6.1...v1.7.0) (2025-12-05)
+
+
+### Features
+
+* :sparkles: add devices by tag page ([9c0e6d0](https://github.com/JDB-NET/ipam/commit/9c0e6d035c8dda68281b2bfe2b7a61802353f7a7))
+
+
+### Bug Fixes
+
+* :bug: invalidate cache when device type is added ([47208b3](https://github.com/JDB-NET/ipam/commit/47208b31eed51f0cf0d7c8c411093bda1c84cf1b))
+* :bug: invalidate linked cache ([8242e9d](https://github.com/JDB-NET/ipam/commit/8242e9d758ef19030b516e4a51f0cfb556f4e5ba))
+
 ## [1.6.1](https://github.com/JDB-NET/ipam/compare/v1.6.0...v1.6.1) (2025-12-05)
 
 
