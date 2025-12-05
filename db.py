@@ -433,5 +433,69 @@ def init_db(app=None):
         api_key = generate_api_key()
         cursor.execute('''INSERT INTO User (name, email, password, role_id, api_key) VALUES (%s, %s, %s, %s, %s)''',
             ('admin', 'admin@example.com', hash_password('password'), admin_role_id, api_key))
+    
+    # Create indexes for performance optimization
+    logging.info("Creating database indexes for performance...")
+    
+    def create_index_if_not_exists(cursor, index_name, table_name, columns):
+        """Helper function to create index if it doesn't exist"""
+        try:
+            # Check if index exists
+            cursor.execute('''
+                SELECT COUNT(*) FROM information_schema.statistics 
+                WHERE table_schema = DATABASE() 
+                AND table_name = %s 
+                AND index_name = %s
+            ''', (table_name, index_name))
+            if cursor.fetchone()[0] == 0:
+                cursor.execute(f'CREATE INDEX {index_name} ON {table_name}({columns})')
+                logging.info(f"Created index {index_name}")
+            else:
+                logging.debug(f"Index {index_name} already exists")
+        except mysql.connector.Error as e:
+            logging.warning(f"Could not create index {index_name}: {e}")
+    
+    # IPAddress table indexes
+    create_index_if_not_exists(cursor, 'idx_ipaddress_subnet_id', 'IPAddress', 'subnet_id')
+    create_index_if_not_exists(cursor, 'idx_ipaddress_hostname', 'IPAddress', 'hostname')
+    create_index_if_not_exists(cursor, 'idx_ipaddress_ip', 'IPAddress', 'ip')
+    create_index_if_not_exists(cursor, 'idx_ipaddress_subnet_hostname', 'IPAddress', 'subnet_id, hostname')
+    
+    # DeviceIPAddress table indexes
+    create_index_if_not_exists(cursor, 'idx_deviceipaddress_device_id', 'DeviceIPAddress', 'device_id')
+    create_index_if_not_exists(cursor, 'idx_deviceipaddress_ip_id', 'DeviceIPAddress', 'ip_id')
+    create_index_if_not_exists(cursor, 'idx_deviceipaddress_device_ip', 'DeviceIPAddress', 'device_id, ip_id')
+    
+    # AuditLog table indexes
+    create_index_if_not_exists(cursor, 'idx_auditlog_timestamp', 'AuditLog', 'timestamp')
+    create_index_if_not_exists(cursor, 'idx_auditlog_user_id', 'AuditLog', 'user_id')
+    create_index_if_not_exists(cursor, 'idx_auditlog_subnet_id', 'AuditLog', 'subnet_id')
+    create_index_if_not_exists(cursor, 'idx_auditlog_action', 'AuditLog', 'action')
+    create_index_if_not_exists(cursor, 'idx_auditlog_user_timestamp', 'AuditLog', 'user_id, timestamp')
+    create_index_if_not_exists(cursor, 'idx_auditlog_subnet_timestamp', 'AuditLog', 'subnet_id, timestamp')
+    
+    # Subnet table indexes
+    create_index_if_not_exists(cursor, 'idx_subnet_site', 'Subnet', 'site')
+    create_index_if_not_exists(cursor, 'idx_subnet_site_name', 'Subnet', 'site, name')
+    
+    # DeviceTag table indexes
+    create_index_if_not_exists(cursor, 'idx_devicetag_device_id', 'DeviceTag', 'device_id')
+    create_index_if_not_exists(cursor, 'idx_devicetag_tag_id', 'DeviceTag', 'tag_id')
+    
+    # DHCPPool table indexes
+    create_index_if_not_exists(cursor, 'idx_dhcppool_subnet_id', 'DHCPPool', 'subnet_id')
+    
+    # RackDevice table indexes
+    create_index_if_not_exists(cursor, 'idx_rackdevice_rack_id', 'RackDevice', 'rack_id')
+    create_index_if_not_exists(cursor, 'idx_rackdevice_device_id', 'RackDevice', 'device_id')
+    create_index_if_not_exists(cursor, 'idx_rackdevice_rack_side', 'RackDevice', 'rack_id, side')
+    
+    # Device table indexes
+    create_index_if_not_exists(cursor, 'idx_device_device_type_id', 'Device', 'device_type_id')
+    
+    # User table indexes (api_key already has UNIQUE index)
+    create_index_if_not_exists(cursor, 'idx_user_role_id', 'User', 'role_id')
+    
+    logging.info("Database indexes created successfully")
     conn.commit()
     conn.close()

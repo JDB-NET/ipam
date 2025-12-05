@@ -351,7 +351,11 @@ def prewarm_cache(app):
                                 
                                 available_ips_by_subnet = {}
                                 for subnet in subnets:
-                                    cursor.execute('SELECT id, ip FROM IPAddress WHERE subnet_id = %s AND id NOT IN (SELECT ip_id FROM DeviceIPAddress)', (subnet['id'],))
+                                    cursor.execute('''
+                    SELECT ip.id, ip.ip FROM IPAddress ip
+                    LEFT JOIN DeviceIPAddress dia ON ip.id = dia.ip_id
+                    WHERE ip.subnet_id = %s AND dia.ip_id IS NULL
+                ''', (subnet['id'],))
                                     ips = [{'id': row[0], 'ip': row[1]} for row in cursor.fetchall()]
                                     cursor.execute('SELECT start_ip, end_ip, excluded_ips FROM DHCPPool WHERE subnet_id = %s', (subnet['id'],))
                                     dhcp_row = cursor.fetchone()
@@ -458,13 +462,15 @@ def register_routes(app):
                 
                 cursor.execute('''
                     SELECT COUNT(*) FROM IPAddress ip
-                    WHERE ip.subnet_id = %s AND ip.id IN (SELECT ip_id FROM DeviceIPAddress)
+                    INNER JOIN DeviceIPAddress dia ON ip.id = dia.ip_id
+                    WHERE ip.subnet_id = %s
                 ''', (subnet_id,))
                 assigned_ips = cursor.fetchone()[0]
                 
                 cursor.execute('''
                     SELECT COUNT(*) FROM IPAddress ip
-                    WHERE ip.subnet_id = %s AND ip.hostname = 'DHCP' AND ip.id NOT IN (SELECT ip_id FROM DeviceIPAddress)
+                    LEFT JOIN DeviceIPAddress dia ON ip.id = dia.ip_id
+                    WHERE ip.subnet_id = %s AND ip.hostname = 'DHCP' AND dia.ip_id IS NULL
                 ''', (subnet_id,))
                 dhcp_ips = cursor.fetchone()[0]
                 
@@ -531,11 +537,24 @@ def register_routes(app):
             cursor.execute('SELECT DISTINCT name FROM Tag ORDER BY name')
             all_tag_names = [row[0] for row in cursor.fetchall()]
             
+            # Optimize: Get device sites in a single query instead of N+1
             sites_devices = {}
+            device_sites = {}
+            if devices:
+                device_ids = [device[0] for device in devices]
+                placeholders = ','.join(['%s'] * len(device_ids))
+                cursor.execute(f'''
+                    SELECT DISTINCT DeviceIPAddress.device_id, Subnet.site
+                    FROM DeviceIPAddress
+                    JOIN IPAddress ON DeviceIPAddress.ip_id = IPAddress.id
+                    JOIN Subnet ON IPAddress.subnet_id = Subnet.id
+                    WHERE DeviceIPAddress.device_id IN ({placeholders})
+                ''', tuple(device_ids))
+                for row in cursor.fetchall():
+                    device_sites[row[0]] = row[1] or 'Unassigned'
+            
             for device in devices:
-                cursor.execute('''SELECT Subnet.site FROM DeviceIPAddress JOIN IPAddress ON DeviceIPAddress.ip_id = IPAddress.id JOIN Subnet ON IPAddress.subnet_id = Subnet.id WHERE DeviceIPAddress.device_id = %s LIMIT 1''', (device[0],))
-                site = cursor.fetchone()
-                site = site[0] if site else 'Unassigned'
+                site = device_sites.get(device[0], 'Unassigned')
                 if site not in sites_devices:
                     sites_devices[site] = []
                 sites_devices[site].append({'id': device[0], 'name': device[1], 'icon_class': device[2]})
@@ -602,7 +621,11 @@ def register_routes(app):
             all_tags = [{'id': row[0], 'name': row[1], 'color': row[2]} for row in cursor.fetchall()]
             available_ips_by_subnet = {}
             for subnet in subnets:
-                cursor.execute('SELECT id, ip FROM IPAddress WHERE subnet_id = %s AND id NOT IN (SELECT ip_id FROM DeviceIPAddress)', (subnet['id'],))
+                cursor.execute('''
+                    SELECT ip.id, ip.ip FROM IPAddress ip
+                    LEFT JOIN DeviceIPAddress dia ON ip.id = dia.ip_id
+                    WHERE ip.subnet_id = %s AND dia.ip_id IS NULL
+                ''', (subnet['id'],))
                 ips = [{'id': row[0], 'ip': row[1]} for row in cursor.fetchall()]
                 cursor.execute('SELECT start_ip, end_ip, excluded_ips FROM DHCPPool WHERE subnet_id = %s', (subnet['id'],))
                 dhcp_row = cursor.fetchone()
@@ -990,13 +1013,15 @@ def register_routes(app):
                 
                 cursor.execute('''
                     SELECT COUNT(*) FROM IPAddress ip
-                    WHERE ip.subnet_id = %s AND ip.id IN (SELECT ip_id FROM DeviceIPAddress)
+                    INNER JOIN DeviceIPAddress dia ON ip.id = dia.ip_id
+                    WHERE ip.subnet_id = %s
                 ''', (subnet_id,))
                 assigned_ips = cursor.fetchone()[0]
                 
                 cursor.execute('''
                     SELECT COUNT(*) FROM IPAddress ip
-                    WHERE ip.subnet_id = %s AND ip.hostname = 'DHCP' AND ip.id NOT IN (SELECT ip_id FROM DeviceIPAddress)
+                    LEFT JOIN DeviceIPAddress dia ON ip.id = dia.ip_id
+                    WHERE ip.subnet_id = %s AND ip.hostname = 'DHCP' AND dia.ip_id IS NULL
                 ''', (subnet_id,))
                 dhcp_ips = cursor.fetchone()[0]
                 
@@ -1705,7 +1730,11 @@ def register_routes(app):
         from flask import current_app
         with get_db_connection(current_app) as conn:
             cursor = conn.cursor()
-            cursor.execute('''SELECT id, ip FROM IPAddress WHERE subnet_id = %s AND id NOT IN (SELECT ip_id FROM DeviceIPAddress) AND (hostname IS NULL OR hostname != 'DHCP')''', (subnet_id,))
+            cursor.execute('''
+                SELECT ip.id, ip.ip FROM IPAddress ip
+                LEFT JOIN DeviceIPAddress dia ON ip.id = dia.ip_id
+                WHERE ip.subnet_id = %s AND dia.ip_id IS NULL AND (ip.hostname IS NULL OR ip.hostname != 'DHCP')
+            ''', (subnet_id,))
             available_ips = cursor.fetchall()
             
             # Filter out DHCP pool IPs
