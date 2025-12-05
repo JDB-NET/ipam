@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.7.1](https://github.com/JDB-NET/ipam/compare/v1.7.0...v1.7.1) (2025-12-05)
+
+
+### Bug Fixes
+
+* :bug: global search missing from devices ([283c445](https://github.com/JDB-NET/ipam/commit/283c445263b7dc992448d907e682e53b7720b610))
+
 ## [1.7.0](https://github.com/JDB-NET/ipam/compare/v1.6.1...v1.7.0) (2025-12-05)
 
 
