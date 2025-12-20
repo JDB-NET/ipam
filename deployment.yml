@@ -24,7 +24,7 @@ spec:
             - name: SECRET_KEY
               value: "41TbN7v5peFLZPrdwSCc64J3mjmiUk5fkVWsmb2m"
             - name: MYSQL_HOST
-              value: "10.10.2.27"
+              value: "10.10.25.4"
             - name: MYSQL_USER
               value: "ipam"
             - name: MYSQL_PASSWORD
