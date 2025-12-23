@@ -1,5 +1,22 @@
 # Changelog
 
+## [1.8.0](https://github.com/JDB-NET/ipam/compare/v1.7.0...v1.8.0) (2025-12-23)
+
+
+### Features
+
+* :sparkles: get next available ip by api ([64ae4be](https://github.com/JDB-NET/ipam/commit/64ae4be6d5997ff0b16ff5232237d38f2fec5b64))
+
+
+### Bug Fixes
+
+* :bug: global search missing from devices ([283c445](https://github.com/JDB-NET/ipam/commit/283c445263b7dc992448d907e682e53b7720b610))
+
+
+### Build System
+
+* :rocket: redeploy ([d7fcffd](https://github.com/JDB-NET/ipam/commit/d7fcffd4b5598b682dede864ba526b1257584f6a))
+
 ## [1.7.0](https://github.com/JDB-NET/ipam/compare/v1.6.1...v1.7.0) (2025-12-05)
 
 
