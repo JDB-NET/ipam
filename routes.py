@@ -2805,6 +2805,33 @@ def register_routes(app):
             subnet['ip_addresses'] = cursor.fetchall()
         return jsonify(subnet)
     
+    @app.route('/api/v1/subnets/<int:subnet_id>/next_free_ip', methods=['GET'])
+    @api_permission_required('view_subnet')
+    def api_subnet_next_free_ip(subnet_id):
+        """Get the next free IP address in a subnet"""
+        from flask import current_app
+        with get_db_connection(current_app) as conn:
+            cursor = conn.cursor(dictionary=True)
+            # First check if subnet exists
+            cursor.execute('SELECT id FROM Subnet WHERE id = %s', (subnet_id,))
+            if not cursor.fetchone():
+                return jsonify({'error': 'Subnet not found'}), 404
+            
+            # Find the first IP in the subnet that is not assigned to any device
+            cursor.execute('''
+                SELECT ip.id, ip.ip
+                FROM IPAddress ip
+                LEFT JOIN DeviceIPAddress dia ON ip.id = dia.ip_id
+                WHERE ip.subnet_id = %s AND dia.ip_id IS NULL
+                ORDER BY INET_ATON(ip.ip)
+                LIMIT 1
+            ''', (subnet_id,))
+            result = cursor.fetchone()
+            if not result:
+                return jsonify({'error': 'No free IP addresses available in this subnet'}), 404
+            
+            return jsonify({'id': result['id'], 'ip': result['ip']})
+    
     @app.route('/api/v1/subnets', methods=['POST'])
     @api_permission_required('add_subnet')
     def api_add_subnet():
