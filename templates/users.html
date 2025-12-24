@@ -127,7 +127,7 @@
                             </div>
                             {% if can_manage_roles %}
                             <div class="flex space-x-2">
-                                <button type="button" onclick="editRole({{ role[0] }}, '{{ role[1]|replace("'", "\\'") }}', '{{ (role[2] or '')|replace("'", "\\'") }}'); return false;" class="text-gray-900 hover:text-gray-600 dark:text-gray-100 dark:hover:text-gray-300 hover:cursor-pointer" title="Edit Role">
+                                <button type="button" onclick="editRole({{ role[0] }}, '{{ role[1]|replace("'", "\\'") }}', '{{ (role[2] or '')|replace("'", "\\'") }}', {{ 'true' if role[3] else 'false' }}); return false;" class="text-gray-900 hover:text-gray-600 dark:text-gray-100 dark:hover:text-gray-300 hover:cursor-pointer" title="Edit Role">
                                     <i class="fas fa-edit"></i>
                                 </button>
                                 <button type="button" onclick="deleteRole({{ role[0] }}, '{{ role[1]|replace("'", "\\'") }}'); return false;" class="text-gray-900 hover:text-gray-600 dark:text-gray-100 dark:hover:text-gray-300 hover:cursor-pointer" title="Delete Role">
@@ -210,6 +210,18 @@
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <input type="text" name="role_name" placeholder="Role Name" class="border p-3 rounded-lg bg-gray-300 text-gray-900 dark:bg-zinc-900 dark:text-gray-100 border-gray-600" required>
                     <input type="text" name="role_description" placeholder="Description (optional)" class="border p-3 rounded-lg bg-gray-300 text-gray-900 dark:bg-zinc-900 dark:text-gray-100 border-gray-600">
+                </div>
+                <div class="mb-4">
+                    <label class="flex items-center cursor-pointer">
+                        <input type="checkbox" name="require_2fa" class="mr-2 w-4 h-4">
+                        <span class="text-sm">
+                            <i class="fas fa-shield-alt mr-1"></i>
+                            Require Two-Factor Authentication for this role
+                        </span>
+                    </label>
+                    <p class="text-xs text-gray-600 dark:text-gray-400 mt-1 ml-6">
+                        Users with this role will be required to set up 2FA on their next login.
+                    </p>
                 </div>
                 <div class="mb-4">
                     <h3 class="font-bold mb-3">Permissions</h3>
@@ -321,6 +333,18 @@
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <input type="text" name="role_name" id="edit-role-name" placeholder="Role Name" class="border p-3 rounded-lg bg-gray-300 text-gray-900 dark:bg-zinc-900 dark:text-gray-100 border-gray-600" required>
                     <input type="text" name="role_description" id="edit-role-description" placeholder="Description (optional)" class="border p-3 rounded-lg bg-gray-300 text-gray-900 dark:bg-zinc-900 dark:text-gray-100 border-gray-600">
+                </div>
+                <div class="mb-4">
+                    <label class="flex items-center cursor-pointer">
+                        <input type="checkbox" name="require_2fa" id="edit-role-require-2fa" class="mr-2 w-4 h-4">
+                        <span class="text-sm">
+                            <i class="fas fa-shield-alt mr-1"></i>
+                            Require Two-Factor Authentication for this role
+                        </span>
+                    </label>
+                    <p class="text-xs text-gray-600 dark:text-gray-400 mt-1 ml-6">
+                        Users with this role will be required to set up 2FA on their next login.
+                    </p>
                 </div>
                 <div class="mb-4">
                     <h3 class="font-bold mb-3">Permissions</h3>

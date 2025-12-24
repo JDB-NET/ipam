@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Account Settings - {{ NAME }} IPAM</title>
+    <link rel="icon" type="image/png" href="{{ LOGO_PNG }}">
+    <link href="/static/css/output.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css" rel="stylesheet">
+</head>
+<body class="bg-gray-300 text-gray-900 dark:bg-zinc-900 dark:text-gray-100 min-h-screen flex flex-col">
+    {% include 'header.html' %}
+    <div class="flex-1 flex items-center justify-center mx-4">
+        <div class="container py-8 max-w-3xl pt-20">
+            <h1 class="text-3xl font-bold mb-6 text-center">
+                <i class="fas fa-user-cog mr-2"></i>
+                Account Settings
+            </h1>
+            
+            {% if success %}
+            <div class="bg-green-200 dark:bg-green-900 text-green-800 dark:text-green-200 p-4 rounded-lg mb-6">
+                <i class="fas fa-check-circle mr-2"></i>{{ success }}
+            </div>
+            {% endif %}
+            
+            {% if error %}
+            <div class="bg-red-200 dark:bg-red-900 text-red-800 dark:text-red-200 p-4 rounded-lg mb-6">
+                <i class="fas fa-exclamation-circle mr-2"></i>{{ error }}
+            </div>
+            {% endif %}
+            
+            <div class="space-y-6">
+                <!-- Change Password Section -->
+                <div class="bg-gray-200 dark:bg-zinc-800 rounded-2xl shadow-lg p-8">
+                    <h2 class="text-2xl font-bold mb-4">
+                        <i class="fas fa-key mr-2"></i>
+                        Change Password
+                    </h2>
+                    <form method="POST" action="/account/change-password" class="space-y-4">
+                        <div>
+                            <label for="current_password" class="block text-sm font-medium mb-2">Current Password</label>
+                            <input type="password" name="current_password" id="current_password" 
+                                   class="w-full p-3 rounded-lg bg-gray-300 dark:bg-zinc-900 border border-gray-600" required>
+                        </div>
+                        <div>
+                            <label for="new_password" class="block text-sm font-medium mb-2">New Password</label>
+                            <input type="password" name="new_password" id="new_password" 
+                                   class="w-full p-3 rounded-lg bg-gray-300 dark:bg-zinc-900 border border-gray-600" required>
+                        </div>
+                        <div>
+                            <label for="confirm_password" class="block text-sm font-medium mb-2">Confirm New Password</label>
+                            <input type="password" name="confirm_password" id="confirm_password" 
+                                   class="w-full p-3 rounded-lg bg-gray-300 dark:bg-zinc-900 border border-gray-600" required>
+                        </div>
+                        <button type="submit" class="w-full bg-gray-200 hover:bg-gray-400 dark:bg-zinc-700 dark:hover:bg-zinc-600 hover:cursor-pointer px-4 py-3 rounded-lg flex items-center gap-2 justify-center">
+                            <i class="fas fa-save"></i>
+                            <span>Change Password</span>
+                        </button>
+                    </form>
+                </div>
+                
+                <!-- Two-Factor Authentication Section -->
+                <div class="bg-gray-200 dark:bg-zinc-800 rounded-2xl shadow-lg p-8">
+                    <h2 class="text-2xl font-bold mb-4">
+                        <i class="fas fa-shield-alt mr-2"></i>
+                        Two-Factor Authentication
+                    </h2>
+                    
+                    {% if totp_enabled %}
+                    <div class="space-y-4">
+                        <div class="bg-green-200 dark:bg-green-900 text-green-800 dark:text-green-200 p-4 rounded-lg">
+                            <i class="fas fa-check-circle mr-2"></i>
+                            2FA is currently <strong>enabled</strong> for your account.
+                        </div>
+                        
+                        <form method="POST" action="/account/disable-2fa" class="mt-4" onsubmit="return confirm('Are you sure you want to disable two-factor authentication? This will make your account less secure.');">
+                            <input type="hidden" name="confirm_disable" value="true">
+                            <button type="submit" class="w-full bg-gray-200 hover:bg-gray-400 dark:bg-zinc-700 dark:hover:bg-zinc-600 hover:cursor-pointer px-4 py-3 rounded-lg flex items-center gap-2 justify-center">
+                                <i class="fas fa-times"></i>
+                                <span>Disable 2FA</span>
+                            </button>
+                        </form>
+                        
+                        <div class="mt-6">
+                            <h3 class="text-lg font-semibold mb-3">
+                                <i class="fas fa-key mr-2"></i>
+                                Backup Codes
+                            </h3>
+                            <p class="text-sm text-gray-600 dark:text-gray-400 mb-4">
+                                Backup codes can be used to access your account if you lose your authenticator device. 
+                                Each code can only be used once.
+                            </p>
+                            
+                            {% if backup_codes %}
+                            <div class="bg-gray-300 dark:bg-zinc-900 p-6 rounded-lg mb-4">
+                                <div class="grid grid-cols-2 gap-4 font-mono text-center">
+                                    {% for code_pair in backup_codes %}
+                                    <div class="p-3 bg-gray-200 dark:bg-zinc-800 rounded border border-gray-400 dark:border-zinc-600">
+                                        {{ code_pair }}
+                                    </div>
+                                    {% endfor %}
+                                </div>
+                            </div>
+                            <button onclick="window.print()" class="w-full bg-gray-200 hover:bg-gray-400 dark:bg-zinc-700 dark:hover:bg-zinc-600 hover:cursor-pointer px-4 py-3 rounded-lg flex items-center gap-2 justify-center">
+                                <i class="fas fa-print"></i>
+                                <span>Print Backup Codes</span>
+                            </button>
+                            {% else %}
+                            <p class="text-sm text-gray-600 dark:text-gray-400 mb-4">
+                                You don't have any backup codes. Generate new ones below.
+                            </p>
+                            {% endif %}
+                            
+                            <form method="POST" action="/account/regenerate-backup-codes" class="mt-4" onsubmit="return confirm('This will invalidate your existing backup codes. Are you sure you want to generate new ones?');">
+                                <button type="submit" class="w-full bg-gray-200 hover:bg-gray-400 dark:bg-zinc-700 dark:hover:bg-zinc-600 hover:cursor-pointer px-4 py-3 rounded-lg flex items-center gap-2 justify-center">
+                                    <i class="fas fa-redo"></i>
+                                    <span>Regenerate Backup Codes</span>
+                                </button>
+                            </form>
+                        </div>
+                    </div>
+                    {% else %}
+                    <div class="space-y-4">
+                        <div class="bg-yellow-200 dark:bg-yellow-900 text-yellow-800 dark:text-yellow-200 p-4 rounded-lg">
+                            <i class="fas fa-exclamation-triangle mr-2"></i>
+                            2FA is currently <strong>disabled</strong> for your account.
+                            {% if role_requires_2fa %}
+                            <br><strong>Note:</strong> Your role requires 2FA. You should enable it now.
+                            {% endif %}
+                        </div>
+                        
+                        <a href="/account/enable-2fa" class="block w-full bg-gray-200 hover:bg-gray-400 dark:bg-zinc-700 dark:hover:bg-zinc-600 hover:cursor-pointer px-4 py-3 rounded-lg flex items-center gap-2 justify-center text-center">
+                            <i class="fas fa-shield-alt"></i>
+                            <span>Enable 2FA</span>
+                        </a>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
+

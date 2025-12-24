@@ -209,6 +209,28 @@ def init_db(app=None):
     if not cursor.fetchone():
         cursor.execute('ALTER TABLE User ADD COLUMN api_key VARCHAR(255) DEFAULT NULL UNIQUE')
     
+    # Add 2FA columns to User table if they don't exist
+    cursor.execute("SHOW COLUMNS FROM User LIKE 'totp_secret'")
+    if not cursor.fetchone():
+        cursor.execute('ALTER TABLE User ADD COLUMN totp_secret VARCHAR(255) DEFAULT NULL')
+    
+    cursor.execute("SHOW COLUMNS FROM User LIKE 'totp_enabled'")
+    if not cursor.fetchone():
+        cursor.execute('ALTER TABLE User ADD COLUMN totp_enabled BOOLEAN DEFAULT FALSE')
+    
+    cursor.execute("SHOW COLUMNS FROM User LIKE 'backup_codes'")
+    if not cursor.fetchone():
+        cursor.execute('ALTER TABLE User ADD COLUMN backup_codes TEXT DEFAULT NULL')
+    
+    cursor.execute("SHOW COLUMNS FROM User LIKE 'two_fa_setup_complete'")
+    if not cursor.fetchone():
+        cursor.execute('ALTER TABLE User ADD COLUMN two_fa_setup_complete BOOLEAN DEFAULT FALSE')
+    
+    # Add require_2fa column to Role table if it doesn't exist
+    cursor.execute("SHOW COLUMNS FROM Role LIKE 'require_2fa'")
+    if not cursor.fetchone():
+        cursor.execute('ALTER TABLE Role ADD COLUMN require_2fa BOOLEAN DEFAULT FALSE')
+    
     # Ensure AuditLog foreign keys have ON DELETE SET NULL to preserve audit logs
     # This is critical - audit logs should NEVER be deleted, even when referenced entities are deleted
     try:

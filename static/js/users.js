@@ -50,12 +50,13 @@ function closeAddRoleModal() {
     document.getElementById('add-role-modal').classList.add('hidden');
 }
 
-function editRole(roleId, roleName, roleDescription) {
+function editRole(roleId, roleName, roleDescription, require2fa) {
     // Make sure add modal is closed first
     document.getElementById('add-role-modal').classList.add('hidden');
     document.getElementById('edit-role-id').value = roleId;
     document.getElementById('edit-role-name').value = roleName;
     document.getElementById('edit-role-description').value = roleDescription || '';
+    document.getElementById('edit-role-require-2fa').checked = require2fa === true || require2fa === 'True' || require2fa === 1;
     
     const permissionsDiv = document.getElementById('edit-role-permissions');
     permissionsDiv.innerHTML = '';

@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Verify Two-Factor Authentication - {{ NAME }} IPAM</title>
+    <link rel="icon" type="image/png" href="{{ LOGO_PNG }}">
+    <link href="/static/css/output.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css" rel="stylesheet">
+</head>
+<body class="bg-gray-300 text-gray-900 dark:bg-zinc-900 dark:text-gray-100 min-h-screen flex flex-col">
+    {% include 'header.html' %}
+    <div class="flex-1 flex items-center justify-center mx-4">
+        <div class="container py-8 max-w-md pt-20">
+            <div class="bg-gray-200 dark:bg-zinc-800 rounded-2xl shadow-lg p-8">
+                <h1 class="text-3xl font-bold mb-6 text-center">
+                    <i class="fas fa-shield-alt mr-2"></i>
+                    Two-Factor Authentication
+                </h1>
+                
+                <div class="space-y-4">
+                    <p class="text-center text-gray-700 dark:text-gray-300">
+                        Enter the 6-digit code from your authenticator app:
+                    </p>
+                    
+                    <form method="POST" class="space-y-4">
+                        <div>
+                            <input type="text" name="code" id="code" maxlength="10" 
+                                   class="w-full p-3 rounded-lg bg-gray-300 dark:bg-zinc-900 border border-gray-600 text-center text-2xl font-mono tracking-widest"
+                                   placeholder="000000" required autofocus>
+                        </div>
+                        
+                        {% if error %}
+                        <div class="bg-red-200 dark:bg-red-900 text-red-800 dark:text-red-200 p-3 rounded-lg">
+                            <i class="fas fa-exclamation-circle mr-2"></i>{{ error }}
+                        </div>
+                        {% endif %}
+                        
+                        <button type="submit" name="use_backup" value="false" class="w-full bg-gray-300 hover:bg-gray-400 dark:bg-zinc-700 dark:hover:bg-zinc-600 hover:cursor-pointer px-4 py-3 rounded-lg flex items-center gap-2 justify-center">
+                            <i class="fas fa-check"></i>
+                            <span>Verify Code</span>
+                        </button>
+                        
+                        <div class="text-center">
+                            <button type="button" onclick="toggleBackupMode()" class="text-sm text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 underline">
+                                Use backup code instead
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+    <script>
+        let backupMode = false;
+        
+        function toggleBackupMode() {
+            backupMode = !backupMode;
+            const codeInput = document.getElementById('code');
+            const form = codeInput.closest('form');
+            const submitBtn = form.querySelector('button[type="submit"]');
+            
+            if (backupMode) {
+                codeInput.placeholder = "Enter backup code";
+                codeInput.maxLength = 20;
+                codeInput.pattern = "";
+                submitBtn.innerHTML = '<i class="fas fa-key"></i><span>Verify Backup Code</span>';
+                submitBtn.setAttribute('name', 'use_backup');
+                submitBtn.setAttribute('value', 'true');
+            } else {
+                codeInput.placeholder = "000000";
+                codeInput.maxLength = 10;
+                codeInput.pattern = "[0-9]{6}";
+                submitBtn.innerHTML = '<i class="fas fa-check"></i><span>Verify Code</span>';
+                submitBtn.removeAttribute('name');
+                submitBtn.removeAttribute('value');
+            }
+            codeInput.value = '';
+            codeInput.focus();
+        }
+        
+        // Auto-submit on 6 digits for TOTP codes
+        const codeInput = document.getElementById('code');
+        codeInput.addEventListener('input', function(e) {
+            if (!backupMode) {
+                this.value = this.value.replace(/[^0-9]/g, '');
+                if (this.value.length === 6) {
+                    this.form.submit();
+                }
+            }
+        });
+    </script>
+</body>
+</html>
+

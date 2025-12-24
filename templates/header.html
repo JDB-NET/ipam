@@ -18,22 +18,44 @@
     </div>
     <nav class="hidden lg:flex items-center space-x-6 flex-shrink-0" id="main-nav">
         {% if has_permission('view_index') %}
-        <a href="/" class="text-gray-200 hover:text-gray-400 font-medium">Home</a>
+        <a href="/" class="text-gray-200 hover:text-gray-400 font-medium flex items-center gap-2">
+            <i class="fas fa-home"></i>
+            <span>Home</span>
+        </a>
         {% endif %}
         {% if has_permission('view_devices') %}
-        <a href="/devices" class="text-gray-200 hover:text-gray-400 font-medium">Devices</a>
+        <a href="/devices" class="text-gray-200 hover:text-gray-400 font-medium flex items-center gap-2">
+            <i class="fas fa-server"></i>
+            <span>Devices</span>
+        </a>
         {% endif %}
         {% if has_permission('view_racks') %}
-        <a href="/racks" class="text-gray-200 hover:text-gray-400 font-medium">Racks</a>
+        <a href="/racks" class="text-gray-200 hover:text-gray-400 font-medium flex items-center gap-2">
+            <i class="fas fa-th"></i>
+            <span>Racks</span>
+        </a>
         {% endif %}
         {% if has_permission('view_admin') %}
-        <a href="/admin" class="text-gray-200 hover:text-gray-400 font-medium">Admin</a>
+        <a href="/admin" class="text-gray-200 hover:text-gray-400 font-medium flex items-center gap-2">
+            <i class="fas fa-cog"></i>
+            <span>Admin</span>
+        </a>
         {% endif %}
         {% if has_permission('view_help') %}
-        <a href="/help" class="text-gray-200 hover:text-gray-400 font-medium">Help</a>
+        <a href="/help" class="text-gray-200 hover:text-gray-400 font-medium flex items-center gap-2">
+            <i class="fas fa-question-circle"></i>
+            <span>Help</span>
+        </a>
         {% endif %}
         {% if current_user_name %}
-        <a href="/logout" class="text-gray-200 hover:text-gray-400 font-medium">Logout</a>
+        <a href="/account" class="text-gray-200 hover:text-gray-400 font-medium flex items-center gap-2">
+            <i class="fas fa-user-cog"></i>
+            <span>Account</span>
+        </a>
+        <a href="/logout" class="text-gray-200 hover:text-gray-400 font-medium flex items-center gap-2">
+            <i class="fas fa-sign-out-alt"></i>
+            <span>Logout</span>
+        </a>
         {% endif %}
     </nav>
     <button class="lg:hidden flex items-center text-gray-200 hover:cursor-pointer focus:outline-none flex-shrink-0" id="nav-toggle" aria-label="Open navigation menu">
@@ -53,22 +75,44 @@
             </div>
         </form>
         {% if has_permission('view_index') %}
-        <a href="/" class="block px-6 py-2 text-gray-200 hover:text-gray-400 font-medium">Home</a>
+        <a href="/" class="block px-6 py-2 text-gray-200 hover:text-gray-400 font-medium flex items-center gap-2">
+            <i class="fas fa-home"></i>
+            <span>Home</span>
+        </a>
         {% endif %}
         {% if has_permission('view_devices') %}
-        <a href="/devices" class="block px-6 py-2 text-gray-200 hover:text-gray-400 font-medium">Devices</a>
+        <a href="/devices" class="block px-6 py-2 text-gray-200 hover:text-gray-400 font-medium flex items-center gap-2">
+            <i class="fas fa-server"></i>
+            <span>Devices</span>
+        </a>
         {% endif %}
         {% if has_permission('view_racks') %}
-        <a href="/racks" class="block px-6 py-2 text-gray-200 hover:text-gray-400 font-medium">Racks</a>
+        <a href="/racks" class="block px-6 py-2 text-gray-200 hover:text-gray-400 font-medium flex items-center gap-2">
+            <i class="fas fa-th"></i>
+            <span>Racks</span>
+        </a>
         {% endif %}
         {% if has_permission('view_admin') %}
-        <a href="/admin" class="block px-6 py-2 text-gray-200 hover:text-gray-400 font-medium">Admin</a>
+        <a href="/admin" class="block px-6 py-2 text-gray-200 hover:text-gray-400 font-medium flex items-center gap-2">
+            <i class="fas fa-cog"></i>
+            <span>Admin</span>
+        </a>
         {% endif %}
         {% if has_permission('view_help') %}
-        <a href="/help" class="block px-6 py-2 text-gray-200 hover:text-gray-400 font-medium">Help</a>
+        <a href="/help" class="block px-6 py-2 text-gray-200 hover:text-gray-400 font-medium flex items-center gap-2">
+            <i class="fas fa-question-circle"></i>
+            <span>Help</span>
+        </a>
         {% endif %}
         {% if current_user_name %}
-        <a href="/logout" class="block px-6 py-2 text-gray-200 hover:text-gray-400 font-medium">Logout</a>
+        <a href="/account" class="block px-6 py-2 text-gray-200 hover:text-gray-400 font-medium flex items-center gap-2">
+            <i class="fas fa-user-cog"></i>
+            <span>Account</span>
+        </a>
+        <a href="/logout" class="block px-6 py-2 text-gray-200 hover:text-gray-400 font-medium flex items-center gap-2">
+            <i class="fas fa-sign-out-alt"></i>
+            <span>Logout</span>
+        </a>
         {% endif %}
     </div>
     <script src="/static/js/header.js"></script>

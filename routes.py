@@ -409,6 +409,10 @@ def register_routes(app):
 
     @app.route('/login', methods=['GET', 'POST'])
     def login():
+        # If already logged in, redirect to index
+        if session.get('logged_in'):
+            return redirect(url_for('index'))
+        
         error = None
         if request.method == 'POST':
             email = request.form['email']
@@ -419,8 +423,37 @@ def register_routes(app):
                 cursor.execute('SELECT id, password FROM User WHERE email = %s', (email,))
                 user = cursor.fetchone()
             if user and verify_password(password, user[1]):
+                user_id = user[0]
+                # Check if user's role requires 2FA
+                with get_db_connection(current_app) as conn:
+                    cursor = conn.cursor()
+                    cursor.execute('''
+                        SELECT u.totp_enabled, u.two_fa_setup_complete, r.require_2fa
+                        FROM User u
+                        LEFT JOIN Role r ON u.role_id = r.id
+                        WHERE u.id = %s
+                    ''', (user_id,))
+                    result = cursor.fetchone()
+                    totp_enabled = result[0] if result else False
+                    setup_complete = result[1] if result else False
+                    role_requires_2fa = result[2] if result else False
+                
+                # If role requires 2FA but user hasn't set it up, redirect to setup
+                if role_requires_2fa and not setup_complete:
+                    session['pending_user_id'] = user_id
+                    session['pending_email'] = email
+                    return redirect(url_for('setup_2fa'))
+                
+                # If 2FA is enabled, require verification
+                if totp_enabled:
+                    session['pending_user_id'] = user_id
+                    session['pending_email'] = email
+                    return redirect(url_for('verify_2fa'))
+                
+                # Normal login - no 2FA required
                 session['logged_in'] = True
-                session['user_id'] = user[0]
+                session['user_id'] = user_id
+                session.modified = True  # Ensure session is saved
                 logging.info(f"User {email} logged in successfully.")
                 return redirect(url_for('index'))
             else:
@@ -434,6 +467,128 @@ def register_routes(app):
         logging.info(f"User {user_name} logged out.")
         session.clear()
         return redirect(url_for('login'))
+    
+    @app.route('/setup-2fa', methods=['GET', 'POST'])
+    def setup_2fa():
+        from totp_utils import generate_totp_secret, get_totp_uri, generate_qr_code, verify_totp, generate_backup_codes, format_backup_codes
+        from flask import current_app
+        import json
+        
+        # If already logged in, redirect to index
+        if session.get('logged_in'):
+            return redirect(url_for('index'))
+        
+        pending_user_id = session.get('pending_user_id')
+        if not pending_user_id:
+            return redirect(url_for('login'))
+        
+        if request.method == 'POST':
+            action = request.form.get('action')
+            
+            if action == 'generate':
+                # Generate new TOTP secret
+                secret = generate_totp_secret()
+                session['temp_totp_secret'] = secret
+                with get_db_connection(current_app) as conn:
+                    cursor = conn.cursor()
+                    cursor.execute('SELECT email FROM User WHERE id = %s', (pending_user_id,))
+                    email = cursor.fetchone()[0]
+                
+                totp_uri = get_totp_uri(secret, email)
+                qr_code = generate_qr_code(totp_uri)
+                return render_with_user('setup_2fa.html', secret=secret, qr_code=qr_code, email=email, step='verify')
+            
+            elif action == 'verify':
+                code = request.form.get('code', '').strip()
+                secret = session.get('temp_totp_secret')
+                
+                if not secret:
+                    return render_with_user('setup_2fa.html', error='Session expired. Please start over.', step='generate')
+                
+                if verify_totp(secret, code):
+                    # Save TOTP secret and generate backup codes
+                    backup_codes = generate_backup_codes()
+                    backup_codes_json = json.dumps(backup_codes)
+                    
+                    with get_db_connection(current_app) as conn:
+                        cursor = conn.cursor()
+                        cursor.execute('''
+                            UPDATE User 
+                            SET totp_secret = %s, totp_enabled = TRUE, backup_codes = %s, two_fa_setup_complete = TRUE
+                            WHERE id = %s
+                        ''', (secret, backup_codes_json, pending_user_id))
+                    
+                    session.pop('temp_totp_secret', None)
+                    session['logged_in'] = True
+                    session['user_id'] = pending_user_id
+                    session.pop('pending_user_id', None)
+                    session.pop('pending_email', None)
+                    session.modified = True  # Ensure session is saved
+                    
+                    formatted_codes = format_backup_codes(backup_codes)
+                    logging.info(f"User {pending_user_id} enabled 2FA successfully.")
+                    return render_with_user('setup_2fa.html', backup_codes=formatted_codes, step='backup_codes')
+                else:
+                    return render_with_user('setup_2fa.html', error='Invalid code. Please try again.', secret=secret, step='verify')
+        
+        return render_with_user('setup_2fa.html', step='generate')
+    
+    @app.route('/verify-2fa', methods=['GET', 'POST'])
+    def verify_2fa():
+        from totp_utils import verify_totp, verify_backup_code
+        from flask import current_app
+        
+        # If already logged in, redirect to index
+        if session.get('logged_in'):
+            return redirect(url_for('index'))
+        
+        pending_user_id = session.get('pending_user_id')
+        if not pending_user_id:
+            return redirect(url_for('login'))
+        
+        if request.method == 'POST':
+            code = request.form.get('code', '').strip()
+            use_backup = request.form.get('use_backup') == 'true'
+            
+            with get_db_connection(current_app) as conn:
+                cursor = conn.cursor()
+                cursor.execute('SELECT totp_secret, backup_codes FROM User WHERE id = %s', (pending_user_id,))
+                result = cursor.fetchone()
+                if not result:
+                    return render_with_user('verify_2fa.html', error='User not found.')
+                
+                totp_secret, backup_codes_json = result
+                
+                if use_backup:
+                    # Verify backup code
+                    valid, updated_codes = verify_backup_code(backup_codes_json, code)
+                    if valid:
+                        # Update backup codes in database
+                        cursor.execute('UPDATE User SET backup_codes = %s WHERE id = %s', 
+                                     (updated_codes, pending_user_id))
+                        session['logged_in'] = True
+                        session['user_id'] = pending_user_id
+                        session.pop('pending_user_id', None)
+                        session.pop('pending_email', None)
+                        session.modified = True  # Ensure session is saved
+                        logging.info(f"User {pending_user_id} logged in with backup code.")
+                        return redirect(url_for('index'))
+                    else:
+                        return render_with_user('verify_2fa.html', error='Invalid backup code.')
+                else:
+                    # Verify TOTP code
+                    if verify_totp(totp_secret, code):
+                        session['logged_in'] = True
+                        session['user_id'] = pending_user_id
+                        session.pop('pending_user_id', None)
+                        session.pop('pending_email', None)
+                        session.modified = True  # Ensure session is saved
+                        logging.info(f"User {pending_user_id} logged in with 2FA.")
+                        return redirect(url_for('index'))
+                    else:
+                        return render_with_user('verify_2fa.html', error='Invalid code. Please try again.')
+        
+        return render_with_user('verify_2fa.html')
 
     @app.route('/')
     @permission_required('view_index')
@@ -1092,6 +1247,154 @@ def register_routes(app):
                     api_key = result[0]
         return render_with_user('api_docs.html', api_key=api_key)
 
+    @app.route('/account', methods=['GET'])
+    @login_required
+    def account_settings():
+        from totp_utils import format_backup_codes
+        from flask import current_app
+        import json
+        
+        user_id = session.get('user_id')
+        with get_db_connection(current_app) as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT u.totp_enabled, u.backup_codes, r.require_2fa
+                FROM User u
+                LEFT JOIN Role r ON u.role_id = r.id
+                WHERE u.id = %s
+            ''', (user_id,))
+            result = cursor.fetchone()
+            totp_enabled = result[0] if result else False
+            backup_codes_json = result[1] if result else None
+            role_requires_2fa = result[2] if result else False
+        
+        backup_codes = None
+        if backup_codes_json:
+            try:
+                codes = json.loads(backup_codes_json)
+                backup_codes = format_backup_codes(codes)
+            except (json.JSONDecodeError, TypeError):
+                pass
+        
+        return render_with_user('account_settings.html', 
+                              totp_enabled=totp_enabled,
+                              backup_codes=backup_codes,
+                              role_requires_2fa=role_requires_2fa)
+    
+    @app.route('/account/enable-2fa', methods=['GET', 'POST'])
+    @login_required
+    def enable_2fa():
+        from totp_utils import generate_totp_secret, get_totp_uri, generate_qr_code, verify_totp, generate_backup_codes, format_backup_codes
+        from flask import current_app
+        import json
+        
+        user_id = session.get('user_id')
+        
+        if request.method == 'POST':
+            action = request.form.get('action')
+            
+            if action == 'generate':
+                secret = generate_totp_secret()
+                session['temp_totp_secret'] = secret
+                with get_db_connection(current_app) as conn:
+                    cursor = conn.cursor()
+                    cursor.execute('SELECT email FROM User WHERE id = %s', (user_id,))
+                    email = cursor.fetchone()[0]
+                
+                totp_uri = get_totp_uri(secret, email)
+                qr_code = generate_qr_code(totp_uri)
+                return render_with_user('enable_2fa.html', secret=secret, qr_code=qr_code, email=email, step='verify')
+            
+            elif action == 'verify':
+                code = request.form.get('code', '').strip()
+                secret = session.get('temp_totp_secret')
+                
+                if not secret:
+                    return render_with_user('enable_2fa.html', error='Session expired. Please start over.', step='generate')
+                
+                if verify_totp(secret, code):
+                    backup_codes = generate_backup_codes()
+                    backup_codes_json = json.dumps(backup_codes)
+                    
+                    with get_db_connection(current_app) as conn:
+                        cursor = conn.cursor()
+                        cursor.execute('''
+                            UPDATE User 
+                            SET totp_secret = %s, totp_enabled = TRUE, backup_codes = %s, two_fa_setup_complete = TRUE
+                            WHERE id = %s
+                        ''', (secret, backup_codes_json, user_id))
+                    
+                    session.pop('temp_totp_secret', None)
+                    formatted_codes = format_backup_codes(backup_codes)
+                    logging.info(f"User {user_id} enabled 2FA.")
+                    return render_with_user('enable_2fa.html', backup_codes=formatted_codes, step='backup_codes')
+                else:
+                    return render_with_user('enable_2fa.html', error='Invalid code. Please try again.', secret=secret, step='verify')
+        
+        return render_with_user('enable_2fa.html', step='generate')
+    
+    @app.route('/account/disable-2fa', methods=['POST'])
+    @login_required
+    def disable_2fa():
+        from flask import current_app
+        
+        user_id = session.get('user_id')
+        with get_db_connection(current_app) as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                UPDATE User 
+                SET totp_secret = NULL, totp_enabled = FALSE, backup_codes = NULL, two_fa_setup_complete = FALSE
+                WHERE id = %s
+            ''', (user_id,))
+        
+        logging.info(f"User {user_id} disabled 2FA.")
+        return redirect(url_for('account_settings', success='2FA has been disabled.'))
+    
+    @app.route('/account/regenerate-backup-codes', methods=['POST'])
+    @login_required
+    def regenerate_backup_codes():
+        from totp_utils import generate_backup_codes, format_backup_codes
+        from flask import current_app
+        import json
+        
+        user_id = session.get('user_id')
+        backup_codes = generate_backup_codes()
+        backup_codes_json = json.dumps(backup_codes)
+        
+        with get_db_connection(current_app) as conn:
+            cursor = conn.cursor()
+            cursor.execute('UPDATE User SET backup_codes = %s WHERE id = %s', (backup_codes_json, user_id))
+        
+        formatted_codes = format_backup_codes(backup_codes)
+        logging.info(f"User {user_id} regenerated backup codes.")
+        return render_with_user('regenerate_backup_codes.html', backup_codes=formatted_codes)
+    
+    @app.route('/account/change-password', methods=['POST'])
+    @login_required
+    def change_password():
+        from flask import current_app
+        
+        user_id = session.get('user_id')
+        current_password = request.form.get('current_password')
+        new_password = request.form.get('new_password')
+        confirm_password = request.form.get('confirm_password')
+        
+        if new_password != confirm_password:
+            return redirect(url_for('account_settings', error='New passwords do not match.'))
+        
+        with get_db_connection(current_app) as conn:
+            cursor = conn.cursor()
+            cursor.execute('SELECT password FROM User WHERE id = %s', (user_id,))
+            result = cursor.fetchone()
+            if not result or not verify_password(current_password, result[0]):
+                return redirect(url_for('account_settings', error='Current password is incorrect.'))
+            
+            hashed_password = hash_password(new_password)
+            cursor.execute('UPDATE User SET password = %s WHERE id = %s', (hashed_password, user_id))
+        
+        logging.info(f"User {user_id} changed password.")
+        return redirect(url_for('account_settings', success='Password changed successfully.'))
+    
     @app.route('/users', methods=['GET', 'POST'])
     @permission_required('view_users')
     def users():
@@ -1160,11 +1463,12 @@ def register_routes(app):
                     else:
                         role_name = request.form['role_name'].strip()
                         role_description = request.form.get('role_description', '').strip()
+                        require_2fa = request.form.get('require_2fa') == 'on'
                         if not role_name:
                             error = 'Role name is required.'
                         else:
                             try:
-                                cursor.execute('INSERT INTO Role (name, description) VALUES (%s, %s)', (role_name, role_description))
+                                cursor.execute('INSERT INTO Role (name, description, require_2fa) VALUES (%s, %s, %s)', (role_name, role_description, require_2fa))
                                 role_id = cursor.lastrowid
                                 # Get selected permissions
                                 permission_ids = request.form.getlist('permissions')
@@ -1184,11 +1488,12 @@ def register_routes(app):
                         role_id = request.form['role_id']
                         role_name = request.form['role_name'].strip()
                         role_description = request.form.get('role_description', '').strip()
+                        require_2fa = request.form.get('require_2fa') == 'on'
                         if not role_name:
                             error = 'Role name is required.'
                         else:
                             try:
-                                cursor.execute('UPDATE Role SET name=%s, description=%s WHERE id=%s', (role_name, role_description, role_id))
+                                cursor.execute('UPDATE Role SET name=%s, description=%s, require_2fa=%s WHERE id=%s', (role_name, role_description, require_2fa, role_id))
                                 # Update permissions
                                 cursor.execute('DELETE FROM RolePermission WHERE role_id=%s', (role_id,))
                                 permission_ids = request.form.getlist('permissions')
@@ -1239,7 +1544,7 @@ def register_routes(app):
             users = cursor.fetchall()
             
             # Get all roles
-            cursor.execute('SELECT id, name, description FROM Role ORDER BY name')
+            cursor.execute('SELECT id, name, description, require_2fa FROM Role ORDER BY name')
             roles = cursor.fetchall()
             
             # Get all permissions grouped by category
