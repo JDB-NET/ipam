@@ -1,5 +1,34 @@
 # Changelog
 
+## [1.9.0](https://github.com/JDB-NET/ipam/compare/v1.8.0...v1.9.0) (2025-12-27)
+
+
+### Features
+
+* :sparkles: api rate limiting ([e316a16](https://github.com/JDB-NET/ipam/commit/e316a1638661e023a23b4b164fc2c773cd2f7e2a))
+* :sparkles: custom fields by device or subnet ([b23cda4](https://github.com/JDB-NET/ipam/commit/b23cda48af575b92a16be2c211e2b2ebb9008a56))
+* :sparkles: ip address history ([21042b7](https://github.com/JDB-NET/ipam/commit/21042b7fd701ecf025ba6d9407137d05156d884a))
+* :sparkles: ip address notes/descriptions ([8b001a0](https://github.com/JDB-NET/ipam/commit/8b001a047b263501300213d40a474b19e976cabb))
+* :sparkles: log api usage to audit log ([e028f96](https://github.com/JDB-NET/ipam/commit/e028f9610cb09c5551594a32fada43e7078a2a73))
+* :sparkles: two factor authentication ([5037c1b](https://github.com/JDB-NET/ipam/commit/5037c1b57823a59ed4dfda6dc3a16d570cde47bd))
+* :sparkles: vlan management ([c7350ae](https://github.com/JDB-NET/ipam/commit/c7350aeb1f5b3ac471e40a351c66f9a82b70bdf4))
+
+
+### Bug Fixes
+
+* :bug: 2fa verification ([53dc19a](https://github.com/JDB-NET/ipam/commit/53dc19a549ca4255d22cc9812c6e7e83e1b76697))
+
+
+### Refactoring
+
+* :art: auto save custom fields ([7e1c4b1](https://github.com/JDB-NET/ipam/commit/7e1c4b126e0d45010b17af7be64f31c85e33d76d))
+* :art: minify ([9106799](https://github.com/JDB-NET/ipam/commit/91067994bac7688b95e8c71a69b14967f640407e))
+
+
+### Style Changes
+
+* :lipstick: backup code button ([181e2b2](https://github.com/JDB-NET/ipam/commit/181e2b2ca53b2c7b99899f54bef028a3d9ac30eb))
+
 ## [1.8.0](https://github.com/JDB-NET/ipam/compare/v1.7.0...v1.8.0) (2025-12-23)
 
 
