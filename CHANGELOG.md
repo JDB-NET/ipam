@@ -1,5 +1,25 @@
 # Changelog
 
+## [1.9.0](https://github.com/JDB-NET/ipam/compare/v1.8.0...v1.9.0) (2025-12-27)
+
+
+### Features
+
+* :sparkles: api rate limiting ([e316a16](https://github.com/JDB-NET/ipam/commit/e316a1638661e023a23b4b164fc2c773cd2f7e2a))
+* :sparkles: ip address history ([21042b7](https://github.com/JDB-NET/ipam/commit/21042b7fd701ecf025ba6d9407137d05156d884a))
+* :sparkles: log api usage to audit log ([e028f96](https://github.com/JDB-NET/ipam/commit/e028f9610cb09c5551594a32fada43e7078a2a73))
+* :sparkles: two factor authentication ([5037c1b](https://github.com/JDB-NET/ipam/commit/5037c1b57823a59ed4dfda6dc3a16d570cde47bd))
+
+
+### Refactoring
+
+* :art: minify ([9106799](https://github.com/JDB-NET/ipam/commit/91067994bac7688b95e8c71a69b14967f640407e))
+
+
+### Style Changes
+
+* :lipstick: backup code button ([181e2b2](https://github.com/JDB-NET/ipam/commit/181e2b2ca53b2c7b99899f54bef028a3d9ac30eb))
+
 ## [1.8.0](https://github.com/JDB-NET/ipam/compare/v1.7.0...v1.8.0) (2025-12-23)
 
 
