@@ -149,12 +149,6 @@
                         </div>
                         {% endfor %}
                     </div>
-                    <div class="flex justify-center mt-4">
-                        <button type="submit" class="bg-gray-200 hover:bg-gray-400 dark:bg-zinc-700 dark:hover:bg-zinc-600 hover:cursor-pointer px-4 py-2 rounded-lg flex items-center gap-2">
-                            <i class="fas fa-save"></i>
-                            <span>Save</span>
-                        </button>
-                    </div>
                 </form>
                 {% else %}
                 <div class="space-y-4">
@@ -243,5 +237,8 @@
     <script src="/static/js/export_csv.min.js"></script>
     <script src="/static/js/subnet.min.js"></script>
     <script src="/static/js/ip_history.min.js"></script>
+    {% if can_edit_subnet %}
+    <script src="/static/js/subnet_custom_fields.min.js"></script>
+    {% endif %}
 </body>
 </html>

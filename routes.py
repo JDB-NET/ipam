@@ -2906,8 +2906,17 @@ def register_routes(app, limiter=None):
             new_values = {}
             errors = []
             
+            # Handle both form data and JSON requests
+            if request.is_json:
+                submitted_data = request.json
+            else:
+                submitted_data = request.form
+            
             for field_key, field_def in field_defs.items():
-                submitted_value = request.form.get(f'custom_field_{field_key}', '')
+                if request.is_json:
+                    submitted_value = submitted_data.get(f'custom_field_{field_key}', '')
+                else:
+                    submitted_value = submitted_data.get(f'custom_field_{field_key}', '')
                 
                 # Parse validation rules
                 validation_rules = field_def.get('validation_rules')
@@ -2944,7 +2953,7 @@ def register_routes(app, limiter=None):
             conn.commit()
             invalidate_cache_for_subnet(subnet_id)
         
-        if request.headers.get('Content-Type') == 'application/json':
+        if request.is_json or request.headers.get('Content-Type') == 'application/json':
             return jsonify({'success': True, 'message': 'Custom fields updated successfully'})
         return redirect(url_for('subnet', subnet_id=subnet_id))
 
