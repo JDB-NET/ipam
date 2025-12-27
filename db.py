@@ -332,6 +332,11 @@ def init_db(app=None):
         # Initialize existing records with empty JSON object
         cursor.execute("UPDATE Subnet SET custom_fields = '{}' WHERE custom_fields IS NULL")
     
+    # Add notes column to IPAddress table if it doesn't exist
+    cursor.execute("SHOW COLUMNS FROM IPAddress LIKE 'notes'")
+    if not cursor.fetchone():
+        cursor.execute('ALTER TABLE IPAddress ADD COLUMN notes TEXT DEFAULT NULL')
+    
     # Define all permissions with categories
     permissions = [
         # View permissions
@@ -529,6 +534,7 @@ def init_db(app=None):
     create_index_if_not_exists(cursor, 'idx_ipaddress_hostname', 'IPAddress', 'hostname')
     create_index_if_not_exists(cursor, 'idx_ipaddress_ip', 'IPAddress', 'ip')
     create_index_if_not_exists(cursor, 'idx_ipaddress_subnet_hostname', 'IPAddress', 'subnet_id, hostname')
+    create_index_if_not_exists(cursor, 'idx_ipaddress_notes', 'IPAddress', 'notes(255)')
     
     # DeviceIPAddress table indexes
     create_index_if_not_exists(cursor, 'idx_deviceipaddress_device_id', 'DeviceIPAddress', 'device_id')

@@ -597,7 +597,7 @@ def prewarm_cache(app):
                             cursor.execute('SELECT id, name, cidr FROM Subnet WHERE id = %s', (subnet_id,))
                             subnet_row = cursor.fetchone()
                             if subnet_row:
-                                cursor.execute('SELECT * FROM IPAddress WHERE subnet_id = %s', (subnet_id,))
+                                cursor.execute('SELECT id, ip, hostname, notes FROM IPAddress WHERE subnet_id = %s', (subnet_id,))
                                 ip_addresses = cursor.fetchall()
                                 
                                 cursor.execute('SELECT COUNT(*) FROM IPAddress WHERE subnet_id = %s', (subnet_id,))
@@ -632,14 +632,17 @@ def prewarm_cache(app):
                                 device_name_map = {name.lower(): (id, description) for id, name, description in devices}
                                 ip_addresses_with_device = []
                                 for ip in ip_addresses:
+                                    ip_id = ip[0]
+                                    ip_address = ip[1]
                                     hostname = ip[2]
+                                    ip_notes = ip[3] if len(ip) > 3 else None
                                     device_id = None
                                     device_description = None
                                     if hostname:
                                         match = device_name_map.get(hostname.lower())
                                         if match:
                                             device_id, device_description = match
-                                    ip_addresses_with_device.append((ip[0], ip[1], hostname, device_id, device_description))
+                                    ip_addresses_with_device.append((ip_id, ip_address, hostname, device_id, device_description, ip_notes))
                                 
                                 subnet_dict = {'id': subnet_row[0], 'name': subnet_row[1], 'cidr': subnet_row[2]}
                                 result = {
@@ -1430,7 +1433,7 @@ def register_routes(app, limiter=None):
             cursor = conn.cursor()
             cursor.execute('SELECT id, name, cidr FROM Subnet WHERE id = %s', (subnet_id,))
             subnet = cursor.fetchone()
-            cursor.execute('SELECT * FROM IPAddress WHERE subnet_id = %s', (subnet_id,))
+            cursor.execute('SELECT id, ip, hostname, notes FROM IPAddress WHERE subnet_id = %s', (subnet_id,))
             ip_addresses = cursor.fetchall()
             
             # Calculate utilization stats
@@ -1469,14 +1472,17 @@ def register_routes(app, limiter=None):
             device_name_map = {name.lower(): (id, description) for id, name, description in devices}
             ip_addresses_with_device = []
             for ip in ip_addresses:
+                ip_id = ip[0]
+                ip_address = ip[1]
                 hostname = ip[2]
+                ip_notes = ip[3] if len(ip) > 3 else None
                 device_id = None
                 device_description = None
                 if hostname:
                     match = device_name_map.get(hostname.lower())
                     if match:
                         device_id, device_description = match
-                ip_addresses_with_device.append((ip[0], ip[1], hostname, device_id, device_description))
+                ip_addresses_with_device.append((ip_id, ip_address, hostname, device_id, device_description, ip_notes))
             
             subnet_dict = {'id': subnet[0], 'name': subnet[1], 'cidr': subnet[2]}
             result = {
@@ -2756,6 +2762,48 @@ def register_routes(app, limiter=None):
         logging.info(f"User {user_name} updated description for device {device_id}.")
         return redirect(url_for('device', device_id=device_id))
 
+    @app.route('/ip/<int:ip_id>/update_notes', methods=['POST'])
+    @permission_required('edit_subnet')
+    def update_ip_notes(ip_id):
+        from flask import jsonify
+        user_name = get_current_user_name()
+        from flask import current_app
+        
+        # Get notes from request (can be JSON or form data)
+        if request.is_json:
+            notes = request.json.get('notes', '')
+        else:
+            notes = request.form.get('notes', '')
+        
+        with get_db_connection(current_app) as conn:
+            cursor = conn.cursor()
+            # Get subnet_id for cache invalidation and audit log
+            cursor.execute('SELECT subnet_id, ip FROM IPAddress WHERE id = %s', (ip_id,))
+            ip_result = cursor.fetchone()
+            if not ip_result:
+                return jsonify({'success': False, 'error': 'IP address not found'}), 404
+            
+            subnet_id, ip_address = ip_result
+            
+            # Update notes
+            cursor.execute('UPDATE IPAddress SET notes = %s WHERE id = %s', (notes, ip_id))
+            conn.commit()
+            
+            # Add audit log
+            add_audit_log(
+                session['user_id'],
+                'update_ip_notes',
+                f"Updated notes for IP {ip_address}",
+                subnet_id,
+                conn=conn
+            )
+        
+        # Invalidate subnet cache
+        invalidate_cache_for_subnet(subnet_id)
+        
+        logging.info(f"User {user_name} updated notes for IP {ip_address} (ID: {ip_id}).")
+        return jsonify({'success': True, 'message': 'Notes updated successfully'})
+
     @app.route('/device/<int:device_id>/update_custom_fields', methods=['POST'])
     @permission_required('edit_device')
     def update_device_custom_fields(device_id):
@@ -2910,29 +2958,42 @@ def register_routes(app, limiter=None):
             subnet = cursor.fetchone()
             if not subnet:
                 return 'Subnet not found', 404
-            cursor.execute('SELECT * FROM IPAddress WHERE subnet_id = %s', (subnet_id,))
+            cursor.execute('SELECT id, ip, hostname, notes FROM IPAddress WHERE subnet_id = %s', (subnet_id,))
             ip_addresses = cursor.fetchall()
             cursor.execute('SELECT id, name, description FROM Device')
             devices = cursor.fetchall()
             device_name_map = {name.lower(): (id, description) for id, name, description in devices}
             ip_addresses_with_device = []
             for ip in ip_addresses:
+                ip_id = ip[0]
+                ip_address = ip[1]
                 hostname = ip[2]
+                ip_notes = ip[3] if len(ip) > 3 else None
                 device_id = None
                 device_description = None
                 if hostname:
                     match = device_name_map.get(hostname.lower())
                     if match:
                         device_id, device_description = match
-                ip_addresses_with_device.append((ip[0], ip[1], hostname, device_id, device_description))
+                ip_addresses_with_device.append((ip_id, ip_address, hostname, device_id, device_description, ip_notes))
         output = StringIO()
         writer = csv.writer(output)
         writer.writerow(['IP Address', 'Hostname', 'Description'])
         for ip in ip_addresses_with_device:
             ip_addr = ip[1] or ''
             hostname = ip[2] or ''
-            description = (ip[4] or '').split('\n')[0] if ip[4] else ''
-            writer.writerow([ip_addr, hostname, description])
+            device_desc = ip[4] or ''
+            ip_notes = ip[5] if len(ip) > 5 and ip[5] else ''
+            # Combine device description and IP notes
+            combined_desc = ''
+            if device_desc:
+                combined_desc = device_desc
+            if ip_notes:
+                if combined_desc:
+                    combined_desc = combined_desc + '\n' + ip_notes
+                else:
+                    combined_desc = ip_notes
+            writer.writerow([ip_addr, hostname, combined_desc])
         csv_bytes = output.getvalue().encode('utf-8')
         output_bytes = BytesIO(csv_bytes)
         output_bytes.seek(0)
@@ -3488,14 +3549,14 @@ def register_routes(app, limiter=None):
                 results['subnets'] = [{'id': row[0], 'name': row[1], 'cidr': row[2], 'site': row[3] or 'Unassigned'} 
                                      for row in cursor.fetchall()]
                 
-                # Search IP Addresses (ip, hostname)
+                # Search IP Addresses (ip, hostname, notes)
                 cursor.execute('''
                     SELECT ip.id, ip.ip, ip.hostname, ip.subnet_id, s.name, s.cidr, s.site
                     FROM IPAddress ip
                     JOIN Subnet s ON ip.subnet_id = s.id
-                    WHERE ip.ip LIKE %s OR ip.hostname LIKE %s
+                    WHERE ip.ip LIKE %s OR ip.hostname LIKE %s OR ip.notes LIKE %s
                     ORDER BY ip.ip
-                ''', (search_pattern, search_pattern))
+                ''', (search_pattern, search_pattern, search_pattern))
                 results['ips'] = [{'id': row[0], 'ip': row[1], 'hostname': row[2], 
                                   'subnet_id': row[3], 'subnet_name': row[4], 
                                   'subnet_cidr': row[5], 'site': row[6] or 'Unassigned'} 

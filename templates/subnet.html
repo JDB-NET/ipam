@@ -200,7 +200,24 @@
                                 {% endif %}
                             </td>
                             <td class="text-left align-top hidden sm:table-cell desc-col">
-                                <textarea readonly rows="1" class="border border-gray-600 rounded w-full resize-y cursor-pointer p-2">{{ ip[4].split('\n')[0] if ip[4] else '' }}</textarea>
+                                {% set device_desc = ip[4] if ip[4] else '' %}
+                                {% set ip_notes = ip[5] if ip|length > 5 and ip[5] else '' %}
+                                {% set combined_desc = '' %}
+                                {% if device_desc %}
+                                    {% set combined_desc = device_desc %}
+                                {% endif %}
+                                {% if ip_notes %}
+                                    {% if combined_desc %}
+                                        {% set combined_desc = combined_desc + '\n' + ip_notes %}
+                                    {% else %}
+                                        {% set combined_desc = ip_notes %}
+                                    {% endif %}
+                                {% endif %}
+                                {% if can_edit_subnet %}
+                                <textarea data-ip-id="{{ ip[0] }}" data-device-desc="{{ device_desc|e }}" rows="1" class="ip-notes-textarea border border-gray-600 rounded w-full p-2 bg-gray-200 dark:bg-zinc-800" style="overflow: hidden; resize: none;">{{ combined_desc }}</textarea>
+                                {% else %}
+                                <textarea readonly rows="1" class="border border-gray-600 rounded w-full cursor-pointer p-2" style="overflow: hidden; resize: none;">{{ combined_desc }}</textarea>
+                                {% endif %}
                             </td>
                         </tr>
                         {% endfor %}
