@@ -75,6 +75,45 @@
                     </ul>
                 </div>
                 
+                <!-- IP History Section -->
+                {% if ip_history %}
+                <div class="ip-history mb-6">
+                    <h3 class="text-lg font-bold mb-2">IP Assignment History:</h3>
+                    <div class="bg-gray-200 dark:bg-zinc-700 rounded-lg p-4 max-h-96 overflow-y-auto">
+                        <div class="space-y-3">
+                            {% for entry in ip_history %}
+                            <div class="flex items-start gap-3 pb-3 {% if not loop.last %}border-b border-gray-400 dark:border-zinc-600{% endif %}">
+                                <div class="flex-shrink-0 mt-1">
+                                    {% if entry.action == 'assigned' %}
+                                    <i class="fas fa-plus-circle text-green-500"></i>
+                                    {% else %}
+                                    <i class="fas fa-minus-circle text-red-500"></i>
+                                    {% endif %}
+                                </div>
+                                <div class="flex-1 min-w-0">
+                                    <div class="flex items-center gap-2 flex-wrap">
+                                        <span class="font-mono font-semibold">{{ entry.ip }}</span>
+                                        <span class="text-sm text-gray-600 dark:text-gray-400">
+                                            {% if entry.action == 'assigned' %}Assigned{% else %}Removed{% endif %}
+                                        </span>
+                                        <span class="text-sm text-gray-600 dark:text-gray-400">
+                                            to {{ entry.device_name }}
+                                        </span>
+                                    </div>
+                                    <div class="text-sm text-gray-600 dark:text-gray-400 mt-1">
+                                        {{ entry.subnet_name }} ({{ entry.subnet_cidr }})
+                                    </div>
+                                    <div class="text-xs text-gray-500 dark:text-gray-500 mt-1">
+                                        by {{ entry.user_name }} • {{ entry.timestamp.strftime('%Y-%m-%d %H:%M:%S') if entry.timestamp else 'Unknown' }}
+                                    </div>
+                                </div>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
+                
                 <!-- Tags Section -->
                 <div class="tags-section mb-6">
                     <h3 class="text-lg font-bold mb-2">Tags:</h3>

@@ -180,7 +180,99 @@ def invalidate_cache_for_device(device_id):
     """Invalidate all cache entries related to a device"""
     cache.invalidate_device(device_id)
     cache.clear('devices')
-    cache.clear('device_list')
+
+def get_ip_history_from_audit_logs(device_id=None, ip_address=None, conn=None):
+    """
+    Extract IP assignment history from audit logs.
+    Returns a list of history entries sorted by timestamp (newest first).
+    Each entry contains: ip, action, device_name, subnet_name, subnet_cidr, user_name, timestamp
+    """
+    import re
+    close_conn = False
+    if conn is None:
+        from flask import current_app
+        conn = get_db_connection(current_app)
+        close_conn = True
+    
+    try:
+        cursor = conn.cursor(dictionary=True)
+        
+        # Get device name if filtering by device_id
+        device_name = None
+        if device_id:
+            cursor.execute('SELECT name FROM Device WHERE id = %s', (device_id,))
+            device_result = cursor.fetchone()
+            if device_result:
+                device_name = device_result[0]
+            else:
+                # Device doesn't exist, return empty history
+                return []
+        
+        # Build query to get relevant audit log entries
+        query = '''
+            SELECT al.id, al.action, al.details, al.timestamp, 
+                   COALESCE(u.name, 'Deleted User') as user_name,
+                   s.name as subnet_name, s.cidr as subnet_cidr
+            FROM AuditLog al
+            LEFT JOIN User u ON al.user_id = u.id
+            LEFT JOIN Subnet s ON al.subnet_id = s.id
+            WHERE (al.action = 'device_add_ip' OR al.action = 'device_delete_ip')
+        '''
+        params = []
+        
+        if ip_address:
+            query += ' AND al.details LIKE %s'
+            params.append(f'%IP {ip_address}%')
+        
+        query += ' ORDER BY al.timestamp DESC'
+        
+        cursor.execute(query, params)
+        logs = cursor.fetchall()
+        
+        history = []
+        # Pattern to extract IP, subnet info, and device name from audit log details
+        # Format: "Assigned IP 192.168.1.1 (SubnetName 192.168.1.0/24) to device DeviceName"
+        # Format: "Removed IP 192.168.1.1 (SubnetName 192.168.1.0/24) from device DeviceName"
+        ip_pattern = r'IP\s+([\d\.]+)'
+        device_pattern = r'(?:to|from)\s+device\s+([^\s]+)'
+        
+        for log in logs:
+            details = log['details'] or ''
+            
+            # Extract IP address
+            ip_match = re.search(ip_pattern, details)
+            if not ip_match:
+                continue
+            
+            extracted_ip = ip_match.group(1)
+            
+            # If filtering by specific IP, skip if it doesn't match
+            if ip_address and extracted_ip != ip_address:
+                continue
+            
+            # Extract device name
+            device_match = re.search(device_pattern, details)
+            extracted_device_name = device_match.group(1) if device_match else 'Unknown'
+            
+            # If filtering by device_id, verify device name matches
+            if device_id and device_name:
+                if extracted_device_name != device_name:
+                    continue
+            
+            history.append({
+                'ip': extracted_ip,
+                'action': 'assigned' if log['action'] == 'device_add_ip' else 'removed',
+                'device_name': extracted_device_name,
+                'subnet_name': log['subnet_name'] or 'Unknown',
+                'subnet_cidr': log['subnet_cidr'] or '',
+                'user_name': log['user_name'],
+                'timestamp': log['timestamp']
+            })
+        
+        return history
+    finally:
+        if close_conn:
+            conn.close()
 
 def invalidate_cache_for_subnet(subnet_id):
     """Invalidate all cache entries related to a subnet"""
@@ -856,13 +948,35 @@ def register_routes(app, limiter=None):
                             in_range = False
                     ips = filtered_ips
                 available_ips_by_subnet[subnet['id']] = ips
+        # Get IP history for this device
+        ip_history = get_ip_history_from_audit_logs(device_id=device_id, conn=conn)
+        
         return render_with_user('device.html', 
                                device={'id': device[0], 'name': device[1], 'description': device[2], 'device_type_id': device[3]}, 
                                subnets=subnets, device_ips=device_ips, available_ips_by_subnet=available_ips_by_subnet, 
                                device_types=device_types, device_tags=device_tags, all_tags=all_tags,
                                can_assign_device_tag=has_permission('assign_device_tag'),
-                               can_remove_device_tag=has_permission('remove_device_tag'))
+                               can_remove_device_tag=has_permission('remove_device_tag'),
+                               ip_history=ip_history)
 
+    @app.route('/api/device/<int:device_id>/ip_history')
+    @permission_required('view_device')
+    def device_ip_history(device_id):
+        """Get IP history for a device as JSON"""
+        from flask import current_app
+        with get_db_connection(current_app) as conn:
+            ip_history = get_ip_history_from_audit_logs(device_id=device_id, conn=conn)
+        return jsonify({'history': ip_history})
+    
+    @app.route('/api/ip/<ip_address>/history')
+    @permission_required('view_subnet')
+    def ip_address_history(ip_address):
+        """Get IP history for a specific IP address as JSON"""
+        from flask import current_app
+        with get_db_connection(current_app) as conn:
+            ip_history = get_ip_history_from_audit_logs(ip_address=ip_address, conn=conn)
+        return jsonify({'history': ip_history, 'ip': ip_address})
+    
     @app.route('/update_device_type', methods=['POST'])
     @permission_required('edit_device')
     def update_device_type():
