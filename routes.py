@@ -686,6 +686,9 @@ def register_routes(app, limiter=None):
             code = request.form.get('code', '').strip()
             use_backup = request.form.get('use_backup') == 'true'
             
+            if not code:
+                return render_with_user('verify_2fa.html', error='Please enter a verification code.')
+            
             with get_db_connection(current_app) as conn:
                 cursor = conn.cursor()
                 cursor.execute('SELECT totp_secret, backup_codes FROM User WHERE id = %s', (pending_user_id,))
@@ -695,13 +698,21 @@ def register_routes(app, limiter=None):
                 
                 totp_secret, backup_codes_json = result
                 
+                # CRITICAL: Ensure TOTP secret exists before attempting verification
+                if not totp_secret:
+                    return render_with_user('verify_2fa.html', error='2FA is not properly configured for this account.')
+                
                 if use_backup:
                     # Verify backup code
+                    if not backup_codes_json:
+                        return render_with_user('verify_2fa.html', error='No backup codes available.')
+                    
                     valid, updated_codes = verify_backup_code(backup_codes_json, code)
                     if valid:
                         # Update backup codes in database
                         cursor.execute('UPDATE User SET backup_codes = %s WHERE id = %s', 
                                      (updated_codes, pending_user_id))
+                        conn.commit()
                         session['logged_in'] = True
                         session['user_id'] = pending_user_id
                         session.pop('pending_user_id', None)
@@ -712,7 +723,10 @@ def register_routes(app, limiter=None):
                     else:
                         return render_with_user('verify_2fa.html', error='Invalid backup code.')
                 else:
-                    # Verify TOTP code
+                    # Verify TOTP code - ensure code is exactly 6 digits
+                    if len(code) != 6 or not code.isdigit():
+                        return render_with_user('verify_2fa.html', error='Invalid code format. Please enter a 6-digit code.')
+                    
                     if verify_totp(totp_secret, code):
                         session['logged_in'] = True
                         session['user_id'] = pending_user_id

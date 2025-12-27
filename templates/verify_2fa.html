@@ -81,12 +81,37 @@
         
         // Auto-submit on 6 digits for TOTP codes
         const codeInput = document.getElementById('code');
+        let isSubmitting = false;
         codeInput.addEventListener('input', function(e) {
-            if (!backupMode) {
+            if (!backupMode && !isSubmitting) {
                 this.value = this.value.replace(/[^0-9]/g, '');
-                if (this.value.length === 6) {
-                    this.form.submit();
+                if (this.value.length === 6 && this.value.trim() !== '') {
+                    isSubmitting = true;
+                    // Small delay to ensure value is set
+                    setTimeout(() => {
+                        if (this.value.length === 6 && this.value.trim() !== '') {
+                            this.form.submit();
+                        } else {
+                            isSubmitting = false;
+                        }
+                    }, 100);
                 }
+            }
+        });
+        
+        // Prevent form submission if code is empty
+        const form = codeInput.closest('form');
+        form.addEventListener('submit', function(e) {
+            const code = codeInput.value.trim();
+            if (!code) {
+                e.preventDefault();
+                alert('Please enter a verification code.');
+                return false;
+            }
+            if (!backupMode && (code.length !== 6 || !/^\d{6}$/.test(code))) {
+                e.preventDefault();
+                alert('Please enter a valid 6-digit code.');
+                return false;
             }
         });
     </script>
