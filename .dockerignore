@@ -49,3 +49,9 @@ tailwindcss
 # OS files
 .DS_Store
 Thumbs.db
+
+# Minified files
+**/*.js
+!**/*.min.js
+device_types.css
+devices.css
