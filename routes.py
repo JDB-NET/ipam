@@ -113,7 +113,40 @@ def api_auth_required(f):
         
         # Store user info in request context
         request.api_user = user
-        return f(*args, **kwargs)
+        
+        # Execute the function
+        response = f(*args, **kwargs)
+        
+        # Log API usage to audit log
+        try:
+            api_path = request.path
+            http_method = request.method
+            user_name = user.get('name', 'Unknown')
+            
+            # Get response status code if available
+            status_code = None
+            if hasattr(response, 'status_code'):
+                status_code = response.status_code
+            elif isinstance(response, tuple) and len(response) > 1:
+                status_code = response[1]
+            
+            # Build details string with status if available
+            if status_code:
+                details = f"API call: {http_method} {api_path} (Status: {status_code})"
+            else:
+                details = f"API call: {http_method} {api_path}"
+            
+            add_audit_log(
+                user_id=user['id'],
+                action='api_usage',
+                details=details,
+                subnet_id=None
+            )
+        except Exception as e:
+            # Don't fail the request if logging fails
+            logging.error(f"Failed to log API usage: {e}")
+        
+        return response
     return decorated_function
 
 def api_permission_required(permission_name):
