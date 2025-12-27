@@ -13,6 +13,10 @@ import shutil
 from datetime import datetime
 from werkzeug.utils import secure_filename
 from cache import cache
+import json
+import re
+from ipaddress import ip_address, IPv4Address, IPv6Address
+from urllib.parse import urlparse
 
 app = None
 
@@ -279,6 +283,208 @@ def invalidate_cache_for_subnet(subnet_id):
     cache.invalidate_subnet(subnet_id)
     cache.clear('index')
     cache.clear('admin')
+
+def validate_custom_field_value(field_def, value):
+    """
+    Validate a custom field value against its field definition.
+    Returns (is_valid, error_message)
+    """
+    if value is None or value == '':
+        if field_def.get('required', False):
+            return False, f"{field_def.get('name', 'Field')} is required"
+        return True, None
+    
+    field_type = field_def.get('field_type', 'text')
+    validation_rules = field_def.get('validation_rules')
+    
+    # Parse validation rules if it's a JSON string
+    if isinstance(validation_rules, str):
+        try:
+            validation_rules = json.loads(validation_rules)
+        except json.JSONDecodeError:
+            validation_rules = {}
+    elif validation_rules is None:
+        validation_rules = {}
+    
+    # Type-specific validation
+    if field_type == 'ip_address':
+        try:
+            ip_address(value)
+        except ValueError:
+            return False, f"Invalid IP address format: {value}"
+    
+    elif field_type == 'email':
+        email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+        if not re.match(email_pattern, value):
+            return False, f"Invalid email format: {value}"
+    
+    elif field_type == 'url':
+        try:
+            result = urlparse(value)
+            if not all([result.scheme, result.netloc]):
+                return False, f"Invalid URL format: {value}"
+        except Exception:
+            return False, f"Invalid URL format: {value}"
+    
+    elif field_type == 'date':
+        try:
+            datetime.strptime(value, '%Y-%m-%d')
+        except ValueError:
+            return False, f"Invalid date format. Expected YYYY-MM-DD: {value}"
+    
+    elif field_type == 'datetime':
+        try:
+            datetime.fromisoformat(value.replace('Z', '+00:00'))
+        except ValueError:
+            return False, f"Invalid datetime format. Expected ISO format: {value}"
+    
+    elif field_type == 'number':
+        try:
+            int(value)
+        except ValueError:
+            return False, f"Invalid integer: {value}"
+        if 'min_value' in validation_rules:
+            if int(value) < validation_rules['min_value']:
+                return False, f"Value must be at least {validation_rules['min_value']}"
+        if 'max_value' in validation_rules:
+            if int(value) > validation_rules['max_value']:
+                return False, f"Value must be at most {validation_rules['max_value']}"
+    
+    elif field_type == 'decimal':
+        try:
+            float(value)
+        except ValueError:
+            return False, f"Invalid decimal number: {value}"
+        if 'min_value' in validation_rules:
+            if float(value) < validation_rules['min_value']:
+                return False, f"Value must be at least {validation_rules['min_value']}"
+        if 'max_value' in validation_rules:
+            if float(value) > validation_rules['max_value']:
+                return False, f"Value must be at most {validation_rules['max_value']}"
+    
+    elif field_type == 'boolean':
+        if value not in [True, False, 'true', 'false', '1', '0', 1, 0]:
+            return False, f"Invalid boolean value: {value}"
+    
+    elif field_type == 'select':
+        if 'select_options' in validation_rules:
+            if value not in validation_rules['select_options']:
+                return False, f"Value must be one of: {', '.join(validation_rules['select_options'])}"
+    
+    # Text length validation (applies to text, textarea, and string-based types)
+    if field_type in ['text', 'textarea', 'ip_address', 'email', 'url']:
+        if 'min_length' in validation_rules:
+            if len(str(value)) < validation_rules['min_length']:
+                return False, f"Value must be at least {validation_rules['min_length']} characters"
+        if 'max_length' in validation_rules:
+            if len(str(value)) > validation_rules['max_length']:
+                return False, f"Value must be at most {validation_rules['max_length']} characters"
+    
+    # Regex pattern validation
+    if 'regex_pattern' in validation_rules:
+        try:
+            if not re.match(validation_rules['regex_pattern'], str(value)):
+                return False, f"Value does not match required pattern"
+        except re.error:
+            # Invalid regex pattern, skip validation
+            pass
+    
+    return True, None
+
+def parse_custom_field_value(field_type, raw_value):
+    """Parse and normalize a custom field value based on its type"""
+    if raw_value is None or raw_value == '':
+        return None
+    
+    if field_type == 'number':
+        try:
+            return int(raw_value)
+        except ValueError:
+            return None
+    elif field_type == 'decimal':
+        try:
+            return float(raw_value)
+        except ValueError:
+            return None
+    elif field_type == 'boolean':
+        if isinstance(raw_value, bool):
+            return raw_value
+        if str(raw_value).lower() in ['true', '1', 'yes']:
+            return True
+        if str(raw_value).lower() in ['false', '0', 'no']:
+            return False
+        return None
+    elif field_type in ['date', 'datetime']:
+        # Return as string, validation ensures format
+        return str(raw_value)
+    else:
+        # text, textarea, ip_address, email, url, select
+        return str(raw_value)
+
+def get_custom_fields_for_entity(entity_type, entity_id, conn=None):
+    """
+    Retrieve custom field definitions with their values for an entity.
+    Returns list of dicts with field definition and current value.
+    """
+    close_conn = False
+    if conn is None:
+        from flask import current_app
+        conn = get_db_connection(current_app)
+        close_conn = True
+    
+    try:
+        cursor = conn.cursor(dictionary=True)
+        
+        # Get field definitions for this entity type
+        cursor.execute('''
+            SELECT id, entity_type, name, field_key, field_type, required, 
+                   default_value, help_text, display_order, validation_rules, searchable
+            FROM CustomFieldDefinition
+            WHERE entity_type = %s
+            ORDER BY display_order, name
+        ''', (entity_type,))
+        field_defs = cursor.fetchall()
+        
+        # Get current values from entity table
+        table_name = 'Device' if entity_type == 'device' else 'Subnet'
+        cursor.execute(f'SELECT custom_fields FROM {table_name} WHERE id = %s', (entity_id,))
+        result = cursor.fetchone()
+        
+        current_values = {}
+        if result and result.get('custom_fields'):
+            try:
+                current_values = json.loads(result['custom_fields'])
+            except (json.JSONDecodeError, TypeError):
+                current_values = {}
+        
+        # Merge definitions with values
+        fields_with_values = []
+        for field_def in field_defs:
+            field_key = field_def['field_key']
+            current_value = current_values.get(field_key)
+            
+            # Use default value if no current value
+            if current_value is None and field_def.get('default_value'):
+                current_value = field_def['default_value']
+            
+            # Parse validation_rules if it's a JSON string
+            validation_rules = field_def.get('validation_rules')
+            if isinstance(validation_rules, str):
+                try:
+                    validation_rules = json.loads(validation_rules)
+                except (json.JSONDecodeError, TypeError):
+                    validation_rules = {}
+            elif validation_rules is None:
+                validation_rules = {}
+            
+            field_def['current_value'] = current_value
+            field_def['validation_rules'] = validation_rules
+            fields_with_values.append(field_def)
+        
+        return fields_with_values
+    finally:
+        if close_conn:
+            conn.close()
 
 def prewarm_cache(app):
     """Pre-warm cache in background by loading all data"""
@@ -906,6 +1112,10 @@ def register_routes(app, limiter=None):
                     # Device was deleted, clear cache and redirect
                     cache.delete(cache_key)
                     return redirect(url_for('devices'))
+                # Get custom fields for device (not cached)
+                custom_fields = get_custom_fields_for_entity('device', device_id, conn=conn)
+                cached_result['custom_fields'] = custom_fields
+                cached_result['can_edit_device'] = has_permission('edit_device')
             return render_with_user('device.html', **cached_result)
         
         from flask import current_app
@@ -962,8 +1172,12 @@ def register_routes(app, limiter=None):
                             in_range = False
                     ips = filtered_ips
                 available_ips_by_subnet[subnet['id']] = ips
-        # Get IP history for this device
-        ip_history = get_ip_history_from_audit_logs(device_id=device_id, conn=conn)
+            
+            # Get custom fields for device
+            custom_fields = get_custom_fields_for_entity('device', device_id, conn=conn)
+            
+            # Get IP history for this device
+            ip_history = get_ip_history_from_audit_logs(device_id=device_id, conn=conn)
         
         return render_with_user('device.html', 
                                device={'id': device[0], 'name': device[1], 'description': device[2], 'device_type_id': device[3]}, 
@@ -971,7 +1185,9 @@ def register_routes(app, limiter=None):
                                device_types=device_types, device_tags=device_tags, all_tags=all_tags,
                                can_assign_device_tag=has_permission('assign_device_tag'),
                                can_remove_device_tag=has_permission('remove_device_tag'),
-                               ip_history=ip_history)
+                               ip_history=ip_history,
+                               custom_fields=custom_fields,
+                               can_edit_device=has_permission('edit_device'))
 
     @app.route('/api/device/<int:device_id>/ip_history')
     @permission_required('view_device')
@@ -1200,9 +1416,14 @@ def register_routes(app, limiter=None):
         cache_key = f'subnet:{subnet_id}'
         cached_result = cache.get(cache_key)
         if cached_result is not None:
+            from flask import current_app
+            with get_db_connection(current_app) as conn:
+                custom_fields = get_custom_fields_for_entity('subnet', subnet_id, conn=conn)
             return render_with_user('subnet.html', subnet=cached_result['subnet'], 
                                   ip_addresses=cached_result['ip_addresses'], 
-                                  utilization=cached_result['utilization'])
+                                  utilization=cached_result['utilization'],
+                                  custom_fields=custom_fields,
+                                  can_edit_subnet=has_permission('edit_subnet'))
         
         from flask import current_app
         with get_db_connection(current_app) as conn:
@@ -1240,6 +1461,9 @@ def register_routes(app, limiter=None):
                 'percent': round(utilization_percent, 1)
             }
             
+            # Get custom fields for subnet
+            custom_fields = get_custom_fields_for_entity('subnet', subnet_id, conn=conn)
+            
             cursor.execute('SELECT id, name, description FROM Device')
             devices = cursor.fetchall()
             device_name_map = {name.lower(): (id, description) for id, name, description in devices}
@@ -1264,7 +1488,9 @@ def register_routes(app, limiter=None):
             cache.set(cache_key, result, ttl=10800)
             return render_with_user('subnet.html', subnet=subnet_dict, 
                                   ip_addresses=ip_addresses_with_device, 
-                                  utilization=utilization_stats)
+                                  utilization=utilization_stats,
+                                  custom_fields=custom_fields,
+                                  can_edit_subnet=has_permission('edit_subnet'))
 
     @app.route('/add_subnet', methods=['POST'])
     @permission_required('add_subnet')
@@ -1822,6 +2048,229 @@ def register_routes(app, limiter=None):
                                can_edit_tag=has_permission('edit_tag'),
                                can_delete_tag=has_permission('delete_tag'))
 
+    @app.route('/custom_fields', methods=['GET', 'POST'])
+    @permission_required('view_custom_fields')
+    def custom_fields():
+        from flask import current_app
+        with get_db_connection(current_app) as conn:
+            cursor = conn.cursor(dictionary=True)
+            error = None
+            
+            if request.method == 'POST':
+                action = request.form.get('action')
+                
+                if action == 'add_field':
+                    if not has_permission('manage_custom_fields', conn=conn):
+                        error = 'You do not have permission to add custom fields.'
+                    else:
+                        entity_type = request.form.get('entity_type', '').strip()
+                        # Debug logging
+                        logging.info(f"Received entity_type: '{entity_type}' (type: {type(entity_type)})")
+                        logging.info(f"Form data keys: {list(request.form.keys())}")
+                        if not entity_type or entity_type not in ['device', 'subnet']:
+                            # Try to get from form data directly
+                            entity_type_raw = request.form.get('entity_type')
+                            logging.error(f"Invalid entity_type received: '{entity_type}' (raw: '{entity_type_raw}')")
+                            # Show more helpful error
+                            error = f'Invalid entity type: "{entity_type}". Must be "device" or "subnet". Please try again.'
+                        else:
+                            name = request.form['name'].strip()
+                            field_key = request.form.get('field_key', '').strip()
+                            field_type = request.form['field_type']
+                            required = 'required' in request.form
+                            default_value = request.form.get('default_value', '').strip()
+                            help_text = request.form.get('help_text', '').strip()
+                            display_order = int(request.form.get('display_order', 0))
+                            searchable = 'searchable' in request.form
+                            
+                            # Generate field_key from name if not provided
+                            if not field_key:
+                                field_key = re.sub(r'[^a-z0-9_]+', '_', name.lower()).strip('_')
+                            
+                            # Build validation_rules JSON
+                            validation_rules = {}
+                            if field_type in ['text', 'textarea']:
+                                if request.form.get('min_length'):
+                                    validation_rules['min_length'] = int(request.form['min_length'])
+                                if request.form.get('max_length'):
+                                    validation_rules['max_length'] = int(request.form['max_length'])
+                                if request.form.get('regex_pattern'):
+                                    validation_rules['regex_pattern'] = request.form['regex_pattern']
+                            elif field_type in ['number', 'decimal']:
+                                if request.form.get('min_value'):
+                                    validation_rules['min_value'] = float(request.form['min_value'])
+                                if request.form.get('max_value'):
+                                    validation_rules['max_value'] = float(request.form['max_value'])
+                            elif field_type == 'select':
+                                options = request.form.get('select_options', '').strip()
+                                if options:
+                                    validation_rules['select_options'] = [opt.strip() for opt in options.split(',') if opt.strip()]
+                            
+                            validation_rules_json = json.dumps(validation_rules) if validation_rules else None
+                            
+                            if not name:
+                                error = 'Field name is required.'
+                            elif not field_key:
+                                error = 'Field key is required.'
+                            else:
+                                try:
+                                    cursor.execute('''
+                                        INSERT INTO CustomFieldDefinition 
+                                        (entity_type, name, field_key, field_type, required, default_value, 
+                                         help_text, display_order, validation_rules, searchable)
+                                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                                    ''', (entity_type, name, field_key, field_type, required, default_value,
+                                          help_text, display_order, validation_rules_json, searchable))
+                                    add_audit_log(session['user_id'], 'add_custom_field', 
+                                                f"Added custom field '{name}' for {entity_type}", conn=conn)
+                                    conn.commit()
+                                    # Redirect to preserve tab state
+                                    return redirect(url_for('custom_fields', tab=entity_type))
+                                except mysql.connector.IntegrityError:
+                                    error = f'Field key "{field_key}" already exists.'
+                
+                elif action == 'edit_field':
+                    if not has_permission('manage_custom_fields', conn=conn):
+                        error = 'You do not have permission to edit custom fields.'
+                    else:
+                        field_id = request.form['field_id']
+                        name = request.form['name'].strip()
+                        field_type = request.form['field_type']
+                        required = 'required' in request.form
+                        default_value = request.form.get('default_value', '').strip()
+                        help_text = request.form.get('help_text', '').strip()
+                        display_order = int(request.form.get('display_order', 0))
+                        searchable = 'searchable' in request.form
+                        
+                        # Build validation_rules JSON
+                        validation_rules = {}
+                        if field_type in ['text', 'textarea']:
+                            if request.form.get('min_length'):
+                                validation_rules['min_length'] = int(request.form['min_length'])
+                            if request.form.get('max_length'):
+                                validation_rules['max_length'] = int(request.form['max_length'])
+                            if request.form.get('regex_pattern'):
+                                validation_rules['regex_pattern'] = request.form['regex_pattern']
+                        elif field_type in ['number', 'decimal']:
+                            if request.form.get('min_value'):
+                                validation_rules['min_value'] = float(request.form['min_value'])
+                            if request.form.get('max_value'):
+                                validation_rules['max_value'] = float(request.form['max_value'])
+                        elif field_type == 'select':
+                            options = request.form.get('select_options', '').strip()
+                            if options:
+                                validation_rules['select_options'] = [opt.strip() for opt in options.split(',') if opt.strip()]
+                        
+                        validation_rules_json = json.dumps(validation_rules) if validation_rules else None
+                        
+                        if not name:
+                            error = 'Field name is required.'
+                        else:
+                            # Get entity_type of the field being edited
+                            cursor.execute('SELECT entity_type FROM CustomFieldDefinition WHERE id = %s', (field_id,))
+                            field_row = cursor.fetchone()
+                            entity_type = field_row['entity_type'] if field_row else 'device'
+                            
+                            cursor.execute('''
+                                UPDATE CustomFieldDefinition 
+                                SET name = %s, field_type = %s, required = %s, default_value = %s,
+                                    help_text = %s, display_order = %s, validation_rules = %s, searchable = %s
+                                WHERE id = %s
+                            ''', (name, field_type, required, default_value, help_text, 
+                                  display_order, validation_rules_json, searchable, field_id))
+                            add_audit_log(session['user_id'], 'edit_custom_field', 
+                                        f"Updated custom field '{name}'", conn=conn)
+                            conn.commit()
+                            # Redirect to preserve tab state
+                            return redirect(url_for('custom_fields', tab=entity_type))
+                
+                elif action == 'delete_field':
+                    if not has_permission('manage_custom_fields', conn=conn):
+                        error = 'You do not have permission to delete custom fields.'
+                    else:
+                        field_id = request.form['field_id']
+                        cursor.execute('SELECT name, entity_type FROM CustomFieldDefinition WHERE id = %s', (field_id,))
+                        field = cursor.fetchone()
+                        if field:
+                            field_name = field['name']
+                            entity_type = field['entity_type']
+                            cursor.execute('DELETE FROM CustomFieldDefinition WHERE id = %s', (field_id,))
+                            add_audit_log(session['user_id'], 'delete_custom_field', 
+                                        f"Deleted custom field '{field_name}'", conn=conn)
+                            conn.commit()
+                            # Redirect to preserve tab state
+                            return redirect(url_for('custom_fields', tab=entity_type))
+                
+                elif action == 'reorder':
+                    if not has_permission('manage_custom_fields', conn=conn):
+                        error = 'You do not have permission to reorder custom fields.'
+                    else:
+                        entity_type = request.form['entity_type']
+                        field_orders = json.loads(request.form['field_orders'])
+                        for field_id, order in field_orders.items():
+                            cursor.execute('UPDATE CustomFieldDefinition SET display_order = %s WHERE id = %s AND entity_type = %s',
+                                         (order, field_id, entity_type))
+                        conn.commit()
+                        # Redirect to preserve tab state
+                        return redirect(url_for('custom_fields', tab=entity_type))
+                        # Redirect to preserve tab state
+                        return redirect(url_for('custom_fields', tab=entity_type))
+            
+            # Get all custom fields grouped by entity type
+            cursor.execute('''
+                SELECT id, entity_type, name, field_key, field_type, required, 
+                       default_value, help_text, display_order, validation_rules, searchable
+                FROM CustomFieldDefinition
+                ORDER BY entity_type, display_order, name
+            ''')
+            all_fields = cursor.fetchall()
+            
+            # Parse validation_rules JSON strings to objects
+            for field in all_fields:
+                if field['validation_rules']:
+                    try:
+                        field['validation_rules'] = json.loads(field['validation_rules'])
+                    except (json.JSONDecodeError, TypeError):
+                        field['validation_rules'] = {}
+                else:
+                    field['validation_rules'] = {}
+            
+            device_fields = [f for f in all_fields if f['entity_type'] == 'device']
+            subnet_fields = [f for f in all_fields if f['entity_type'] == 'subnet']
+            
+            # Get active tab from query parameter
+            active_tab = request.args.get('tab', 'device')
+            if active_tab not in ['device', 'subnet']:
+                active_tab = 'device'
+            
+        return render_with_user('custom_fields.html', 
+                               device_fields=device_fields,
+                               subnet_fields=subnet_fields,
+                               error=error,
+                               can_manage=has_permission('manage_custom_fields'),
+                               active_tab=active_tab)
+
+    @app.route('/custom_fields/<entity_type>')
+    @permission_required('view_custom_fields')
+    def custom_fields_by_type(entity_type):
+        """Get custom fields for a specific entity type"""
+        if entity_type not in ['device', 'subnet']:
+            abort(404)
+        
+        from flask import current_app
+        with get_db_connection(current_app) as conn:
+            cursor = conn.cursor(dictionary=True)
+            cursor.execute('''
+                SELECT id, entity_type, name, field_key, field_type, required, 
+                       default_value, help_text, display_order, validation_rules, searchable
+                FROM CustomFieldDefinition
+                WHERE entity_type = %s
+                ORDER BY display_order, name
+            ''', (entity_type,))
+            fields = cursor.fetchall()
+        
+        return jsonify({'fields': fields})
+
     @app.route('/audit')
     @permission_required('view_audit')
     def audit():
@@ -2306,6 +2755,150 @@ def register_routes(app, limiter=None):
         invalidate_cache_for_device(device_id)
         logging.info(f"User {user_name} updated description for device {device_id}.")
         return redirect(url_for('device', device_id=device_id))
+
+    @app.route('/device/<int:device_id>/update_custom_fields', methods=['POST'])
+    @permission_required('edit_device')
+    def update_device_custom_fields(device_id):
+        """Update custom field values for a device"""
+        from flask import current_app
+        with get_db_connection(current_app) as conn:
+            cursor = conn.cursor(dictionary=True)
+            
+            # Get all field definitions for devices
+            cursor.execute('''
+                SELECT id, field_key, field_type, required, validation_rules
+                FROM CustomFieldDefinition
+                WHERE entity_type = 'device'
+            ''')
+            field_defs = {f['field_key']: f for f in cursor.fetchall()}
+            
+            # Get current custom fields
+            cursor.execute('SELECT custom_fields FROM Device WHERE id = %s', (device_id,))
+            result = cursor.fetchone()
+            current_values = {}
+            if result and result.get('custom_fields'):
+                try:
+                    current_values = json.loads(result['custom_fields'])
+                except (json.JSONDecodeError, TypeError):
+                    current_values = {}
+            
+            # Process submitted values
+            new_values = {}
+            errors = []
+            
+            for field_key, field_def in field_defs.items():
+                submitted_value = request.form.get(f'custom_field_{field_key}', '')
+                
+                # Parse validation rules
+                validation_rules = field_def.get('validation_rules')
+                if isinstance(validation_rules, str):
+                    try:
+                        validation_rules = json.loads(validation_rules)
+                    except json.JSONDecodeError:
+                        validation_rules = {}
+                elif validation_rules is None:
+                    validation_rules = {}
+                field_def['validation_rules'] = validation_rules
+                
+                # Validate value
+                if submitted_value == '' and not field_def.get('required'):
+                    # Optional field left empty - remove from values
+                    continue
+                
+                is_valid, error_msg = validate_custom_field_value(field_def, submitted_value)
+                if not is_valid:
+                    errors.append(error_msg)
+                else:
+                    parsed_value = parse_custom_field_value(field_def['field_type'], submitted_value)
+                    if parsed_value is not None:
+                        new_values[field_key] = parsed_value
+            
+            if errors:
+                return jsonify({'error': 'Validation errors', 'errors': errors}), 400
+            
+            # Update custom_fields JSON
+            custom_fields_json = json.dumps(new_values)
+            cursor.execute('UPDATE Device SET custom_fields = %s WHERE id = %s', (custom_fields_json, device_id))
+            add_audit_log(session['user_id'], 'update_device_custom_fields', 
+                         f"Updated custom fields for device {device_id}", conn=conn)
+            conn.commit()
+            invalidate_cache_for_device(device_id)
+        
+        if request.headers.get('Content-Type') == 'application/json':
+            return jsonify({'success': True, 'message': 'Custom fields updated successfully'})
+        return redirect(url_for('device', device_id=device_id))
+
+    @app.route('/subnet/<int:subnet_id>/update_custom_fields', methods=['POST'])
+    @permission_required('edit_subnet')
+    def update_subnet_custom_fields(subnet_id):
+        """Update custom field values for a subnet"""
+        from flask import current_app
+        with get_db_connection(current_app) as conn:
+            cursor = conn.cursor(dictionary=True)
+            
+            # Get all field definitions for subnets
+            cursor.execute('''
+                SELECT id, field_key, field_type, required, validation_rules
+                FROM CustomFieldDefinition
+                WHERE entity_type = 'subnet'
+            ''')
+            field_defs = {f['field_key']: f for f in cursor.fetchall()}
+            
+            # Get current custom fields
+            cursor.execute('SELECT custom_fields FROM Subnet WHERE id = %s', (subnet_id,))
+            result = cursor.fetchone()
+            current_values = {}
+            if result and result.get('custom_fields'):
+                try:
+                    current_values = json.loads(result['custom_fields'])
+                except (json.JSONDecodeError, TypeError):
+                    current_values = {}
+            
+            # Process submitted values
+            new_values = {}
+            errors = []
+            
+            for field_key, field_def in field_defs.items():
+                submitted_value = request.form.get(f'custom_field_{field_key}', '')
+                
+                # Parse validation rules
+                validation_rules = field_def.get('validation_rules')
+                if isinstance(validation_rules, str):
+                    try:
+                        validation_rules = json.loads(validation_rules)
+                    except json.JSONDecodeError:
+                        validation_rules = {}
+                elif validation_rules is None:
+                    validation_rules = {}
+                field_def['validation_rules'] = validation_rules
+                
+                # Validate value
+                if submitted_value == '' and not field_def.get('required'):
+                    # Optional field left empty - remove from values
+                    continue
+                
+                is_valid, error_msg = validate_custom_field_value(field_def, submitted_value)
+                if not is_valid:
+                    errors.append(error_msg)
+                else:
+                    parsed_value = parse_custom_field_value(field_def['field_type'], submitted_value)
+                    if parsed_value is not None:
+                        new_values[field_key] = parsed_value
+            
+            if errors:
+                return jsonify({'error': 'Validation errors', 'errors': errors}), 400
+            
+            # Update custom_fields JSON
+            custom_fields_json = json.dumps(new_values)
+            cursor.execute('UPDATE Subnet SET custom_fields = %s WHERE id = %s', (custom_fields_json, subnet_id))
+            add_audit_log(session['user_id'], 'update_subnet_custom_fields', 
+                         f"Updated custom fields for subnet {subnet_id}", conn=conn)
+            conn.commit()
+            invalidate_cache_for_subnet(subnet_id)
+        
+        if request.headers.get('Content-Type') == 'application/json':
+            return jsonify({'success': True, 'message': 'Custom fields updated successfully'})
+        return redirect(url_for('subnet', subnet_id=subnet_id))
 
     @app.route('/subnet/<int:subnet_id>/export_csv')
     @permission_required('export_subnet_csv')
@@ -3010,6 +3603,16 @@ def register_routes(app, limiter=None):
                     ORDER BY t.name
                 ''', (device['id'],))
                 device['tags'] = cursor.fetchall()
+                # Get custom fields
+                cursor.execute('SELECT custom_fields FROM Device WHERE id = %s', (device['id'],))
+                cf_result = cursor.fetchone()
+                if cf_result and cf_result.get('custom_fields'):
+                    try:
+                        device['custom_fields'] = json.loads(cf_result['custom_fields'])
+                    except (json.JSONDecodeError, TypeError):
+                        device['custom_fields'] = {}
+                else:
+                    device['custom_fields'] = {}
         return jsonify({'devices': devices})
     
     @app.route('/api/v1/devices/<int:device_id>', methods=['GET'])
@@ -3045,6 +3648,16 @@ def register_routes(app, limiter=None):
                 ORDER BY t.name
             ''', (device_id,))
             device['tags'] = cursor.fetchall()
+            # Get custom fields
+            cursor.execute('SELECT custom_fields FROM Device WHERE id = %s', (device_id,))
+            cf_result = cursor.fetchone()
+            if cf_result and cf_result.get('custom_fields'):
+                try:
+                    device['custom_fields'] = json.loads(cf_result['custom_fields'])
+                except (json.JSONDecodeError, TypeError):
+                    device['custom_fields'] = {}
+            else:
+                device['custom_fields'] = {}
         return jsonify(device)
     
     @app.route('/api/v1/devices', methods=['POST'])
@@ -3267,6 +3880,16 @@ def register_routes(app, limiter=None):
                 subnet['total_ips'] = stats['total']
                 subnet['used_ips'] = stats['used']
                 subnet['available_ips'] = stats['total'] - stats['used']
+                # Get custom fields
+                cursor.execute('SELECT custom_fields FROM Subnet WHERE id = %s', (subnet['id'],))
+                cf_result = cursor.fetchone()
+                if cf_result and cf_result.get('custom_fields'):
+                    try:
+                        subnet['custom_fields'] = json.loads(cf_result['custom_fields'])
+                    except (json.JSONDecodeError, TypeError):
+                        subnet['custom_fields'] = {}
+                else:
+                    subnet['custom_fields'] = {}
         return jsonify({'subnets': subnets})
     
     @app.route('/api/v1/subnets/<int:subnet_id>', methods=['GET'])
@@ -3290,6 +3913,16 @@ def register_routes(app, limiter=None):
                 ORDER BY ip.ip
             ''', (subnet_id,))
             subnet['ip_addresses'] = cursor.fetchall()
+            # Get custom fields
+            cursor.execute('SELECT custom_fields FROM Subnet WHERE id = %s', (subnet_id,))
+            cf_result = cursor.fetchone()
+            if cf_result and cf_result.get('custom_fields'):
+                try:
+                    subnet['custom_fields'] = json.loads(cf_result['custom_fields'])
+                except (json.JSONDecodeError, TypeError):
+                    subnet['custom_fields'] = {}
+            else:
+                subnet['custom_fields'] = {}
         return jsonify(subnet)
     
     @app.route('/api/v1/subnets/<int:subnet_id>/next_free_ip', methods=['GET'])
@@ -3638,6 +4271,151 @@ def register_routes(app, limiter=None):
             )
             conn.commit()
         return jsonify({'message': 'Device removed from rack successfully', 'rack_device_id': rack_device_id})
+    
+    # Custom Fields API
+    @app.route('/api/v1/custom_fields/<entity_type>', methods=['GET'])
+    @rate_limit("100 per minute")
+    @api_permission_required('view_custom_fields')
+    def api_custom_fields_by_type(entity_type):
+        """Get custom field definitions for a specific entity type"""
+        if entity_type not in ['device', 'subnet']:
+            return jsonify({'error': 'Invalid entity type. Must be "device" or "subnet"'}), 400
+        
+        from flask import current_app
+        with get_db_connection(current_app) as conn:
+            cursor = conn.cursor(dictionary=True)
+            cursor.execute('''
+                SELECT id, entity_type, name, field_key, field_type, required, 
+                       default_value, help_text, display_order, validation_rules, searchable
+                FROM CustomFieldDefinition
+                WHERE entity_type = %s
+                ORDER BY display_order, name
+            ''', (entity_type,))
+            fields = cursor.fetchall()
+            # Parse validation_rules JSON strings
+            for field in fields:
+                if field.get('validation_rules'):
+                    try:
+                        field['validation_rules'] = json.loads(field['validation_rules'])
+                    except (json.JSONDecodeError, TypeError):
+                        field['validation_rules'] = {}
+        return jsonify({'fields': fields})
+    
+    @app.route('/api/v1/custom_fields', methods=['POST'])
+    @rate_limit("50 per minute")
+    @api_permission_required('manage_custom_fields')
+    def api_add_custom_field():
+        """Create a new custom field definition"""
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': 'Request body is required'}), 400
+        
+        required_fields = ['entity_type', 'name', 'field_key', 'field_type']
+        for field in required_fields:
+            if field not in data:
+                return jsonify({'error': f'{field} is required'}), 400
+        
+        entity_type = data['entity_type']
+        if entity_type not in ['device', 'subnet']:
+            return jsonify({'error': 'Invalid entity_type. Must be "device" or "subnet"'}), 400
+        
+        from flask import current_app
+        with get_db_connection(current_app) as conn:
+            cursor = conn.cursor(dictionary=True)
+            try:
+                validation_rules = data.get('validation_rules', {})
+                validation_rules_json = json.dumps(validation_rules) if validation_rules else None
+                
+                cursor.execute('''
+                    INSERT INTO CustomFieldDefinition 
+                    (entity_type, name, field_key, field_type, required, default_value, 
+                     help_text, display_order, validation_rules, searchable)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                ''', (entity_type, data['name'], data['field_key'], data['field_type'],
+                      data.get('required', False), data.get('default_value'),
+                      data.get('help_text'), data.get('display_order', 0),
+                      validation_rules_json, data.get('searchable', False)))
+                field_id = cursor.lastrowid
+                add_audit_log(request.api_user['id'], 'add_custom_field',
+                            f"Added custom field '{data['name']}' for {entity_type}", conn=conn)
+                conn.commit()
+                return jsonify({'id': field_id, 'message': 'Custom field created successfully'}), 201
+            except mysql.connector.IntegrityError:
+                return jsonify({'error': f'Field key "{data["field_key"]}" already exists'}), 400
+    
+    @app.route('/api/v1/custom_fields/<int:field_id>', methods=['PUT'])
+    @rate_limit("50 per minute")
+    @api_permission_required('manage_custom_fields')
+    def api_update_custom_field(field_id):
+        """Update a custom field definition"""
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': 'Request body is required'}), 400
+        
+        from flask import current_app
+        with get_db_connection(current_app) as conn:
+            cursor = conn.cursor(dictionary=True)
+            cursor.execute('SELECT id FROM CustomFieldDefinition WHERE id = %s', (field_id,))
+            if not cursor.fetchone():
+                return jsonify({'error': 'Custom field not found'}), 404
+            
+            updates = []
+            values = []
+            
+            if 'name' in data:
+                updates.append('name = %s')
+                values.append(data['name'])
+            if 'field_type' in data:
+                updates.append('field_type = %s')
+                values.append(data['field_type'])
+            if 'required' in data:
+                updates.append('required = %s')
+                values.append(data['required'])
+            if 'default_value' in data:
+                updates.append('default_value = %s')
+                values.append(data['default_value'])
+            if 'help_text' in data:
+                updates.append('help_text = %s')
+                values.append(data['help_text'])
+            if 'display_order' in data:
+                updates.append('display_order = %s')
+                values.append(data['display_order'])
+            if 'validation_rules' in data:
+                validation_rules_json = json.dumps(data['validation_rules']) if data['validation_rules'] else None
+                updates.append('validation_rules = %s')
+                values.append(validation_rules_json)
+            if 'searchable' in data:
+                updates.append('searchable = %s')
+                values.append(data['searchable'])
+            
+            if not updates:
+                return jsonify({'error': 'No changes to apply'}), 400
+            
+            values.append(field_id)
+            cursor.execute(f'UPDATE CustomFieldDefinition SET {", ".join(updates)} WHERE id = %s', values)
+            add_audit_log(request.api_user['id'], 'edit_custom_field',
+                         f"Updated custom field {field_id}", conn=conn)
+            conn.commit()
+        return jsonify({'message': 'Custom field updated successfully'})
+    
+    @app.route('/api/v1/custom_fields/<int:field_id>', methods=['DELETE'])
+    @rate_limit("50 per minute")
+    @api_permission_required('manage_custom_fields')
+    def api_delete_custom_field(field_id):
+        """Delete a custom field definition"""
+        from flask import current_app
+        with get_db_connection(current_app) as conn:
+            cursor = conn.cursor(dictionary=True)
+            cursor.execute('SELECT name FROM CustomFieldDefinition WHERE id = %s', (field_id,))
+            field = cursor.fetchone()
+            if not field:
+                return jsonify({'error': 'Custom field not found'}), 404
+            
+            cursor.execute('DELETE FROM CustomFieldDefinition WHERE id = %s', (field_id,))
+            add_audit_log(request.api_user['id'], 'delete_custom_field',
+                         f"Deleted custom field '{field['name']}'", conn=conn)
+            conn.commit()
+        return jsonify({'message': 'Custom field deleted successfully'})
     
     # Device Types API
     @app.route('/api/v1/device-types', methods=['GET'])

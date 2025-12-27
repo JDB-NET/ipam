@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Custom Fields Management</title>
+    <link rel="icon" type="image/png" href="{{ LOGO_PNG }}">
+    <link href="/static/css/output.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css" rel="stylesheet">
+</head>
+<body class="bg-gray-300 text-gray-900 dark:bg-zinc-900 dark:text-gray-100 min-h-screen flex flex-col">
+    {% include 'header.html' %}
+    <div class="flex-1 mx-4 py-8 pt-20">
+        <div class="container max-w-7xl mx-auto">
+            <div class="flex items-center justify-between mb-6">
+                <h1 class="text-3xl font-bold">Custom Fields Management</h1>
+                {% if can_manage %}
+                <button onclick="showAddFieldModal()" id="add-field-btn" class="bg-gray-200 hover:bg-gray-400 dark:bg-zinc-700 dark:hover:bg-zinc-600 hover:cursor-pointer px-6 py-2 rounded-lg font-medium">
+                    <i class="fas fa-plus mr-2"></i>Add Field
+                </button>
+                {% endif %}
+            </div>
+            
+            {% if error %}
+            <div class="bg-red-200 dark:bg-red-800 text-red-800 dark:text-red-200 p-4 rounded-lg mb-6">
+                {{ error }}
+            </div>
+            {% endif %}
+            
+            <!-- Tabs -->
+            <div class="mb-6 border-b border-gray-600">
+                <div class="flex space-x-4">
+                    <button onclick="switchTab('device')" id="tab-device" class="tab-btn px-4 py-2 font-medium border-b-2 {% if active_tab == 'device' %}border-gray-600 text-gray-900 dark:text-gray-100{% else %}border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300{% endif %} hover:cursor-pointer">
+                        Device Fields
+                    </button>
+                    <button onclick="switchTab('subnet')" id="tab-subnet" class="tab-btn px-4 py-2 font-medium border-b-2 {% if active_tab == 'subnet' %}border-gray-600 text-gray-900 dark:text-gray-100{% else %}border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300{% endif %} hover:cursor-pointer">
+                        Subnet Fields
+                    </button>
+                </div>
+            </div>
+            
+            <!-- Device Fields Tab -->
+            <div id="device-fields-tab" class="tab-content {% if active_tab != 'device' %}hidden{% endif %}">
+                {% if device_fields %}
+                <div class="bg-gray-200 dark:bg-zinc-800 p-6 rounded-lg shadow-md">
+                    <div class="overflow-x-auto">
+                        <table class="w-full">
+                            <thead>
+                                <tr class="border-b border-gray-600">
+                                    <th class="text-left p-3">Order</th>
+                                    <th class="text-left p-3">Name</th>
+                                    <th class="text-left p-3">Field Key</th>
+                                    <th class="text-left p-3">Type</th>
+                                    <th class="text-center p-3">Required</th>
+                                    <th class="text-center p-3">Searchable</th>
+                                    <th class="text-center p-3">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="device-fields-tbody">
+                                {% for field in device_fields %}
+                                <tr class="border-b border-gray-600 hover:bg-gray-300 dark:hover:bg-zinc-700" data-field-id="{{ field.id }}">
+                                    <td class="p-3">
+                                        <div class="flex items-center space-x-2">
+                                            <button onclick="moveField('device', {{ field.id }}, 'up')" class="text-gray-500 hover:text-gray-700 dark:hover:text-gray-300" title="Move Up">
+                                                <i class="fas fa-arrow-up text-xs"></i>
+                                            </button>
+                                            <span class="text-sm">{{ field.display_order }}</span>
+                                            <button onclick="moveField('device', {{ field.id }}, 'down')" class="text-gray-500 hover:text-gray-700 dark:hover:text-gray-300" title="Move Down">
+                                                <i class="fas fa-arrow-down text-xs"></i>
+                                            </button>
+                                        </div>
+                                    </td>
+                                    <td class="p-3 font-medium">{{ field.name }}</td>
+                                    <td class="p-3 font-mono text-sm">{{ field.field_key }}</td>
+                                    <td class="p-3 text-sm">{{ field.field_type }}</td>
+                                    <td class="p-3 text-center">
+                                        {% if field.required %}
+                                        <i class="fas fa-check text-green-500"></i>
+                                        {% else %}
+                                        <i class="fas fa-times text-gray-400"></i>
+                                        {% endif %}
+                                    </td>
+                                    <td class="p-3 text-center">
+                                        {% if field.searchable %}
+                                        <i class="fas fa-check text-green-500"></i>
+                                        {% else %}
+                                        <i class="fas fa-times text-gray-400"></i>
+                                        {% endif %}
+                                    </td>
+                                    <td class="p-3 text-center">
+                                        <div class="flex items-center justify-center space-x-2">
+                                            {% if can_manage %}
+                                            <button onclick="editField({{ field.id }}, 'device')" class="text-gray-900 hover:text-gray-600 dark:text-gray-100 dark:hover:text-gray-300 hover:cursor-pointer" title="Edit Field">
+                                                <i class="fas fa-edit"></i>
+                                            </button>
+                                            <form action="/custom_fields" method="POST" onsubmit="return confirm('Are you sure you want to delete this field? Existing data will be preserved.');" class="inline">
+                                                <input type="hidden" name="action" value="delete_field">
+                                                <input type="hidden" name="field_id" value="{{ field.id }}">
+                                                <button type="submit" class="text-gray-900 hover:text-gray-600 dark:text-gray-100 dark:hover:text-gray-300 hover:cursor-pointer" title="Delete Field">
+                                                    <i class="fas fa-trash"></i>
+                                                </button>
+                                            </form>
+                                            {% endif %}
+                                        </div>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                {% else %}
+                <div class="bg-gray-200 dark:bg-zinc-800 p-6 rounded-lg shadow-md">
+                    <div class="text-center py-8 text-gray-500">
+                        <i class="fas fa-list text-4xl mb-4"></i>
+                        <p>No device custom fields defined. Add your first field to get started.</p>
+                    </div>
+                </div>
+                {% endif %}
+            </div>
+            
+            <!-- Subnet Fields Tab -->
+            <div id="subnet-fields-tab" class="tab-content {% if active_tab != 'subnet' %}hidden{% endif %}">
+                {% if subnet_fields %}
+                <div class="bg-gray-200 dark:bg-zinc-800 p-6 rounded-lg shadow-md">
+                    <div class="overflow-x-auto">
+                        <table class="w-full">
+                            <thead>
+                                <tr class="border-b border-gray-600">
+                                    <th class="text-left p-3">Order</th>
+                                    <th class="text-left p-3">Name</th>
+                                    <th class="text-left p-3">Field Key</th>
+                                    <th class="text-left p-3">Type</th>
+                                    <th class="text-center p-3">Required</th>
+                                    <th class="text-center p-3">Searchable</th>
+                                    <th class="text-center p-3">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="subnet-fields-tbody">
+                                {% for field in subnet_fields %}
+                                <tr class="border-b border-gray-600 hover:bg-gray-300 dark:hover:bg-zinc-700" data-field-id="{{ field.id }}">
+                                    <td class="p-3">
+                                        <div class="flex items-center space-x-2">
+                                            <button onclick="moveField('subnet', {{ field.id }}, 'up')" class="text-gray-500 hover:text-gray-700 dark:hover:text-gray-300" title="Move Up">
+                                                <i class="fas fa-arrow-up text-xs"></i>
+                                            </button>
+                                            <span class="text-sm">{{ field.display_order }}</span>
+                                            <button onclick="moveField('subnet', {{ field.id }}, 'down')" class="text-gray-500 hover:text-gray-700 dark:hover:text-gray-300" title="Move Down">
+                                                <i class="fas fa-arrow-down text-xs"></i>
+                                            </button>
+                                        </div>
+                                    </td>
+                                    <td class="p-3 font-medium">{{ field.name }}</td>
+                                    <td class="p-3 font-mono text-sm">{{ field.field_key }}</td>
+                                    <td class="p-3 text-sm">{{ field.field_type }}</td>
+                                    <td class="p-3 text-center">
+                                        {% if field.required %}
+                                        <i class="fas fa-check text-green-500"></i>
+                                        {% else %}
+                                        <i class="fas fa-times text-gray-400"></i>
+                                        {% endif %}
+                                    </td>
+                                    <td class="p-3 text-center">
+                                        {% if field.searchable %}
+                                        <i class="fas fa-check text-green-500"></i>
+                                        {% else %}
+                                        <i class="fas fa-times text-gray-400"></i>
+                                        {% endif %}
+                                    </td>
+                                    <td class="p-3 text-center">
+                                        <div class="flex items-center justify-center space-x-2">
+                                            {% if can_manage %}
+                                            <button onclick="editField({{ field.id }}, 'subnet')" class="text-gray-900 hover:text-gray-600 dark:text-gray-100 dark:hover:text-gray-300 hover:cursor-pointer" title="Edit Field">
+                                                <i class="fas fa-edit"></i>
+                                            </button>
+                                            <form action="/custom_fields" method="POST" onsubmit="return confirm('Are you sure you want to delete this field? Existing data will be preserved.');" class="inline">
+                                                <input type="hidden" name="action" value="delete_field">
+                                                <input type="hidden" name="field_id" value="{{ field.id }}">
+                                                <button type="submit" class="text-gray-900 hover:text-gray-600 dark:text-gray-100 dark:hover:text-gray-300 hover:cursor-pointer" title="Delete Field">
+                                                    <i class="fas fa-trash"></i>
+                                                </button>
+                                            </form>
+                                            {% endif %}
+                                        </div>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                {% else %}
+                <div class="bg-gray-200 dark:bg-zinc-800 p-6 rounded-lg shadow-md">
+                    <div class="text-center py-8 text-gray-500">
+                        <i class="fas fa-list text-4xl mb-4"></i>
+                        <p>No subnet custom fields defined. Add your first field to get started.</p>
+                    </div>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    
+    <!-- Add/Edit Field Modal -->
+    <div id="field-modal" class="hidden fixed inset-0 bg-black/30 backdrop-blur-md flex items-center justify-center z-50">
+        <div class="bg-gray-200 dark:bg-zinc-800 p-6 rounded-lg shadow-lg max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-xl font-bold" id="modal-title">Add Custom Field</h2>
+                <button onclick="closeFieldModal()" class="text-gray-500 hover:text-gray-700">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <form id="field-form" action="/custom_fields" method="POST">
+                <input type="hidden" name="action" id="form-action" value="add_field">
+                <input type="hidden" name="field_id" id="form-field-id">
+                <input type="hidden" name="entity_type" id="form-entity-type">
+                <div class="space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium mb-1">Field Name *</label>
+                        <input type="text" name="name" id="field-name" placeholder="e.g., Serial Number" 
+                               class="border p-3 rounded-lg bg-gray-300 text-gray-900 dark:bg-zinc-900 dark:text-gray-100 border-gray-600 w-full" required>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium mb-1">Field Key *</label>
+                        <input type="text" name="field_key" id="field-key" placeholder="e.g., serial_number" 
+                               class="border p-3 rounded-lg bg-gray-300 text-gray-900 dark:bg-zinc-900 dark:text-gray-100 border-gray-600 w-full font-mono text-sm" required>
+                        <p class="text-xs text-gray-500 mt-1">Internal identifier (lowercase, underscores only)</p>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium mb-1">Field Type *</label>
+                        <select name="field_type" id="field-type" 
+                                class="border p-3 rounded-lg bg-gray-300 text-gray-900 dark:bg-zinc-900 dark:text-gray-100 border-gray-600 w-full" required onchange="updateFieldTypeOptions()">
+                            <option value="text">Text</option>
+                            <option value="textarea">Textarea</option>
+                            <option value="ip_address">IP Address</option>
+                            <option value="date">Date</option>
+                            <option value="datetime">Date & Time</option>
+                            <option value="number">Number (Integer)</option>
+                            <option value="decimal">Decimal/Float</option>
+                            <option value="email">Email</option>
+                            <option value="url">URL</option>
+                            <option value="boolean">Boolean/Checkbox</option>
+                            <option value="select">Select/Dropdown</option>
+                        </select>
+                    </div>
+                    <div class="flex items-center space-x-2">
+                        <input type="checkbox" name="required" id="field-required" class="w-4 h-4">
+                        <label for="field-required" class="text-sm font-medium">Required</label>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium mb-1">Default Value</label>
+                        <input type="text" name="default_value" id="field-default-value" placeholder="Default value (optional)" 
+                               class="border p-3 rounded-lg bg-gray-300 text-gray-900 dark:bg-zinc-900 dark:text-gray-100 border-gray-600 w-full">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium mb-1">Help Text</label>
+                        <textarea name="help_text" id="field-help-text" placeholder="Help text/description (optional)" rows="2"
+                                  class="border p-3 rounded-lg bg-gray-300 text-gray-900 dark:bg-zinc-900 dark:text-gray-100 border-gray-600 w-full resize-y"></textarea>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium mb-1">Display Order</label>
+                        <input type="number" name="display_order" id="field-display-order" value="0" min="0"
+                               class="border p-3 rounded-lg bg-gray-300 text-gray-900 dark:bg-zinc-900 dark:text-gray-100 border-gray-600 w-full">
+                    </div>
+                    <div class="flex items-center space-x-2">
+                        <input type="checkbox" name="searchable" id="field-searchable" class="w-4 h-4">
+                        <label for="field-searchable" class="text-sm font-medium">Searchable</label>
+                    </div>
+                    
+                    <!-- Validation Rules Section -->
+                    <div id="validation-rules-section" class="border-t border-gray-600 pt-4">
+                        <h3 class="text-lg font-medium mb-3">Validation Rules</h3>
+                        
+                        <!-- Text/Textarea validation -->
+                        <div id="text-validation" class="hidden space-y-2">
+                            <div>
+                                <label class="block text-sm font-medium mb-1">Min Length</label>
+                                <input type="number" name="min_length" id="field-min-length" min="0"
+                                       class="border p-2 rounded-lg bg-gray-300 text-gray-900 dark:bg-zinc-900 dark:text-gray-100 border-gray-600 w-full">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium mb-1">Max Length</label>
+                                <input type="number" name="max_length" id="field-max-length" min="1"
+                                       class="border p-2 rounded-lg bg-gray-300 text-gray-900 dark:bg-zinc-900 dark:text-gray-100 border-gray-600 w-full">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium mb-1">Regex Pattern</label>
+                                <input type="text" name="regex_pattern" id="field-regex-pattern" placeholder="^[A-Z].*$"
+                                       class="border p-2 rounded-lg bg-gray-300 text-gray-900 dark:bg-zinc-900 dark:text-gray-100 border-gray-600 w-full font-mono text-sm">
+                            </div>
+                        </div>
+                        
+                        <!-- Number/Decimal validation -->
+                        <div id="number-validation" class="hidden space-y-2">
+                            <div>
+                                <label class="block text-sm font-medium mb-1">Min Value</label>
+                                <input type="number" name="min_value" id="field-min-value" step="any"
+                                       class="border p-2 rounded-lg bg-gray-300 text-gray-900 dark:bg-zinc-900 dark:text-gray-100 border-gray-600 w-full">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium mb-1">Max Value</label>
+                                <input type="number" name="max_value" id="field-max-value" step="any"
+                                       class="border p-2 rounded-lg bg-gray-300 text-gray-900 dark:bg-zinc-900 dark:text-gray-100 border-gray-600 w-full">
+                            </div>
+                        </div>
+                        
+                        <!-- Select validation -->
+                        <div id="select-validation" class="hidden">
+                            <label class="block text-sm font-medium mb-1">Options (comma-separated) *</label>
+                            <input type="text" name="select_options" id="field-select-options" placeholder="option1, option2, option3"
+                                   class="border p-2 rounded-lg bg-gray-300 text-gray-900 dark:bg-zinc-900 dark:text-gray-100 border-gray-600 w-full">
+                            <p class="text-xs text-gray-500 mt-1">Enter options separated by commas</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="flex justify-end space-x-2 mt-6">
+                    <button type="button" onclick="closeFieldModal()" 
+                            class="px-4 py-2 bg-gray-300 hover:bg-gray-400 dark:bg-zinc-700 dark:hover:bg-zinc-600 hover:cursor-pointer rounded-lg">Cancel</button>
+                    <button type="submit" 
+                            class="px-4 py-2 bg-gray-300 hover:bg-gray-400 dark:bg-zinc-700 dark:hover:bg-zinc-600 hover:cursor-pointer rounded-lg">Save Field</button>
+                </div>
+            </form>
+        </div>
+    </div>
+    
+    <!-- Embed field data for JavaScript -->
+    <script type="application/json" id="fields-data">
+    {
+        "device": {{ device_fields|tojson }},
+        "subnet": {{ subnet_fields|tojson }}
+    }
+    </script>
+    <script src="/static/js/custom_fields.min.js"></script>
+</body>
+</html>
+

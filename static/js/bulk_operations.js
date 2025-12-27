@@ -1,12 +1,20 @@
 function showTab(tabName) {
     // Hide all panels
     document.querySelectorAll('.tab-panel').forEach(panel => panel.classList.add('hidden'));
-    // Remove active class from all tabs
-    document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+    
+    // Update all tab buttons to inactive state
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+        btn.classList.remove('border-gray-600', 'text-gray-900', 'dark:text-gray-100');
+        btn.classList.add('border-transparent', 'text-gray-500');
+    });
+    
     // Show selected panel
     document.getElementById('panel-' + tabName).classList.remove('hidden');
-    // Add active class to selected tab
-    document.getElementById('tab-' + tabName).classList.add('active');
+    
+    // Update selected tab to active state
+    const activeTab = document.getElementById('tab-' + tabName);
+    activeTab.classList.remove('border-transparent', 'text-gray-500');
+    activeTab.classList.add('border-gray-600', 'text-gray-900', 'dark:text-gray-100');
 }
 
 document.addEventListener('DOMContentLoaded', function() {

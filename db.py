@@ -299,6 +299,39 @@ def init_db(app=None):
     )
     ''')
     
+    # Create CustomFieldDefinition table
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS CustomFieldDefinition (
+        id INTEGER PRIMARY KEY AUTO_INCREMENT,
+        entity_type ENUM('device', 'subnet') NOT NULL,
+        name VARCHAR(255) NOT NULL,
+        field_key VARCHAR(255) NOT NULL UNIQUE,
+        field_type VARCHAR(50) NOT NULL,
+        required BOOLEAN DEFAULT FALSE,
+        default_value TEXT,
+        help_text TEXT,
+        display_order INTEGER DEFAULT 0,
+        validation_rules TEXT,
+        searchable BOOLEAN DEFAULT FALSE,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+    )
+    ''')
+    
+    # Add custom_fields column to Device table if it doesn't exist
+    cursor.execute("SHOW COLUMNS FROM Device LIKE 'custom_fields'")
+    if not cursor.fetchone():
+        cursor.execute('ALTER TABLE Device ADD COLUMN custom_fields TEXT DEFAULT NULL')
+        # Initialize existing records with empty JSON object
+        cursor.execute("UPDATE Device SET custom_fields = '{}' WHERE custom_fields IS NULL")
+    
+    # Add custom_fields column to Subnet table if it doesn't exist
+    cursor.execute("SHOW COLUMNS FROM Subnet LIKE 'custom_fields'")
+    if not cursor.fetchone():
+        cursor.execute('ALTER TABLE Subnet ADD COLUMN custom_fields TEXT DEFAULT NULL')
+        # Initialize existing records with empty JSON object
+        cursor.execute("UPDATE Subnet SET custom_fields = '{}' WHERE custom_fields IS NULL")
+    
     # Define all permissions with categories
     permissions = [
         # View permissions
@@ -353,6 +386,10 @@ def init_db(app=None):
         ('delete_tag', 'Delete tag', 'Tag'),
         ('assign_device_tag', 'Assign tag to device', 'Tag'),
         ('remove_device_tag', 'Remove tag from device', 'Tag'),
+        
+        # Custom Fields permissions
+        ('view_custom_fields', 'View custom fields', 'Custom Fields'),
+        ('manage_custom_fields', 'Manage custom fields (add, edit, delete)', 'Custom Fields'),
         
         # Admin permissions
         ('manage_users', 'Manage users (add, edit, delete)', 'Admin'),
@@ -415,7 +452,8 @@ def init_db(app=None):
         'add_nonnet_device_to_rack', 'export_rack_csv',
         'configure_dhcp',
         'add_device_type', 'edit_device_type', 'delete_device_type',
-        'view_tags', 'add_tag', 'edit_tag', 'delete_tag', 'assign_device_tag', 'remove_device_tag'
+        'view_tags', 'add_tag', 'edit_tag', 'delete_tag', 'assign_device_tag', 'remove_device_tag',
+        'view_custom_fields', 'manage_custom_fields'
     ]
     
     for perm_name in non_admin_permissions:
@@ -434,7 +472,7 @@ def init_db(app=None):
     view_only_permissions = [
         'view_index', 'view_devices', 'view_device', 'view_subnet', 'view_racks', 'view_rack',
         'view_audit', 'view_device_types', 'view_device_type_stats', 'view_devices_by_type',
-        'view_dhcp', 'view_help', 'view_tags'
+        'view_dhcp', 'view_help', 'view_tags', 'view_custom_fields'
     ]
     
     for perm_name in view_only_permissions:
@@ -526,6 +564,11 @@ def init_db(app=None):
     
     # User table indexes (api_key already has UNIQUE index)
     create_index_if_not_exists(cursor, 'idx_user_role_id', 'User', 'role_id')
+    
+    # CustomFieldDefinition table indexes
+    create_index_if_not_exists(cursor, 'idx_customfield_entity_type', 'CustomFieldDefinition', 'entity_type')
+    create_index_if_not_exists(cursor, 'idx_customfield_field_key', 'CustomFieldDefinition', 'field_key')
+    create_index_if_not_exists(cursor, 'idx_customfield_entity_order', 'CustomFieldDefinition', 'entity_type, display_order')
     
     logging.info("Database indexes created successfully")
     conn.commit()

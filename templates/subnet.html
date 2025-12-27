@@ -38,6 +38,139 @@
                 </a>
             </div>
             <button id="toggle-desc" class="sm:hidden bg-gray-300 hover:bg-gray-400 dark:bg-zinc-700 dark:hover:bg-zinc-600 hover:cursor-pointer px-4 py-2 rounded-lg mb-4 w-full">Show Descriptions</button>
+            
+            <!-- Custom Fields Section -->
+            {% if custom_fields %}
+            <div class="custom-fields-section mb-6 max-w-md mx-auto">
+                {% if can_edit_subnet %}
+                <form action="/subnet/{{ subnet.id }}/update_custom_fields" method="POST" id="custom-fields-form">
+                    <div class="space-y-4">
+                        {% for field in custom_fields %}
+                        <div class="custom-field-item">
+                            <label for="custom_field_{{ field.field_key }}" class="block mb-1 text-sm font-medium">
+                                {{ field.name }}
+                                {% if field.required %}<span class="text-red-500">*</span>{% endif %}
+                                {% if field.help_text %}
+                                <span class="text-xs text-gray-500 dark:text-gray-400 ml-2" title="{{ field.help_text }}">
+                                    <i class="fas fa-info-circle"></i>
+                                </span>
+                                {% endif %}
+                            </label>
+                            {% if field.field_type == 'textarea' %}
+                            <textarea name="custom_field_{{ field.field_key }}" 
+                                      id="custom_field_{{ field.field_key }}"
+                                      class="border p-2 rounded-lg bg-gray-200 dark:bg-zinc-800 border-gray-600 w-full resize-y"
+                                      {% if field.required %}required{% endif %}
+                                      placeholder="{{ field.help_text or '' }}">{{ field.current_value or field.default_value or '' }}</textarea>
+                            {% elif field.field_type == 'boolean' %}
+                            <div class="flex items-center space-x-2">
+                                <input type="checkbox" name="custom_field_{{ field.field_key }}" 
+                                       id="custom_field_{{ field.field_key }}"
+                                       value="true"
+                                       {% if field.current_value or (not field.current_value and field.default_value == 'true') %}checked{% endif %}
+                                       class="w-4 h-4">
+                                <label for="custom_field_{{ field.field_key }}" class="text-sm">Yes</label>
+                            </div>
+                            {% elif field.field_type == 'select' %}
+                            {% set options = [] %}
+                            {% if field.validation_rules and field.validation_rules.select_options %}
+                                {% set options = field.validation_rules.select_options %}
+                            {% endif %}
+                            <select name="custom_field_{{ field.field_key }}" 
+                                    id="custom_field_{{ field.field_key }}"
+                                    class="border p-2 rounded-lg bg-gray-200 dark:bg-zinc-800 border-gray-600 w-full"
+                                    {% if field.required %}required{% endif %}>
+                                {% if not field.required %}
+                                <option value="">-- None --</option>
+                                {% endif %}
+                                {% for option in options %}
+                                <option value="{{ option }}" {% if field.current_value == option or (not field.current_value and field.default_value == option) %}selected{% endif %}>{{ option }}</option>
+                                {% endfor %}
+                            </select>
+                            {% elif field.field_type == 'date' %}
+                            <input type="date" name="custom_field_{{ field.field_key }}" 
+                                   id="custom_field_{{ field.field_key }}"
+                                   class="border p-2 rounded-lg bg-gray-200 dark:bg-zinc-800 border-gray-600 w-full"
+                                   value="{{ field.current_value or field.default_value or '' }}"
+                                   {% if field.required %}required{% endif %}>
+                            {% elif field.field_type == 'datetime' %}
+                            <input type="datetime-local" name="custom_field_{{ field.field_key }}" 
+                                   id="custom_field_{{ field.field_key }}"
+                                   class="border p-2 rounded-lg bg-gray-200 dark:bg-zinc-800 border-gray-600 w-full"
+                                   value="{{ field.current_value or field.default_value or '' }}"
+                                   {% if field.required %}required{% endif %}>
+                            {% elif field.field_type == 'number' %}
+                            <input type="number" name="custom_field_{{ field.field_key }}" 
+                                   id="custom_field_{{ field.field_key }}"
+                                   class="border p-2 rounded-lg bg-gray-200 dark:bg-zinc-800 border-gray-600 w-full"
+                                   value="{{ field.current_value or field.default_value or '' }}"
+                                   {% if field.required %}required{% endif %}
+                                   {% if field.validation_rules and field.validation_rules.min_value %}min="{{ field.validation_rules.min_value }}"{% endif %}
+                                   {% if field.validation_rules and field.validation_rules.max_value %}max="{{ field.validation_rules.max_value }}"{% endif %}>
+                            {% elif field.field_type == 'decimal' %}
+                            <input type="number" step="any" name="custom_field_{{ field.field_key }}" 
+                                   id="custom_field_{{ field.field_key }}"
+                                   class="border p-2 rounded-lg bg-gray-200 dark:bg-zinc-800 border-gray-600 w-full"
+                                   value="{{ field.current_value or field.default_value or '' }}"
+                                   {% if field.required %}required{% endif %}
+                                   {% if field.validation_rules and field.validation_rules.min_value %}min="{{ field.validation_rules.min_value }}"{% endif %}
+                                   {% if field.validation_rules and field.validation_rules.max_value %}max="{{ field.validation_rules.max_value }}"{% endif %}>
+                            {% elif field.field_type == 'ip_address' %}
+                            <input type="text" name="custom_field_{{ field.field_key }}" 
+                                   id="custom_field_{{ field.field_key }}"
+                                   class="border p-2 rounded-lg bg-gray-200 dark:bg-zinc-800 border-gray-600 w-full font-mono"
+                                   value="{{ field.current_value or field.default_value or '' }}"
+                                   placeholder="192.168.1.1"
+                                   {% if field.required %}required{% endif %}>
+                            {% elif field.field_type == 'email' %}
+                            <input type="email" name="custom_field_{{ field.field_key }}" 
+                                   id="custom_field_{{ field.field_key }}"
+                                   class="border p-2 rounded-lg bg-gray-200 dark:bg-zinc-800 border-gray-600 w-full"
+                                   value="{{ field.current_value or field.default_value or '' }}"
+                                   placeholder="user@example.com"
+                                   {% if field.required %}required{% endif %}>
+                            {% elif field.field_type == 'url' %}
+                            <input type="url" name="custom_field_{{ field.field_key }}" 
+                                   id="custom_field_{{ field.field_key }}"
+                                   class="border p-2 rounded-lg bg-gray-200 dark:bg-zinc-800 border-gray-600 w-full"
+                                   value="{{ field.current_value or field.default_value or '' }}"
+                                   placeholder="https://example.com"
+                                   {% if field.required %}required{% endif %}>
+                            {% else %}
+                            <input type="text" name="custom_field_{{ field.field_key }}" 
+                                   id="custom_field_{{ field.field_key }}"
+                                   class="border p-2 rounded-lg bg-gray-200 dark:bg-zinc-800 border-gray-600 w-full"
+                                   value="{{ field.current_value or field.default_value or '' }}"
+                                   placeholder="{{ field.help_text or '' }}"
+                                   {% if field.required %}required{% endif %}
+                                   {% if field.validation_rules and field.validation_rules.min_length %}minlength="{{ field.validation_rules.min_length }}"{% endif %}
+                                   {% if field.validation_rules and field.validation_rules.max_length %}maxlength="{{ field.validation_rules.max_length }}"{% endif %}>
+                            {% endif %}
+                        </div>
+                        {% endfor %}
+                    </div>
+                    <div class="flex justify-center mt-4">
+                        <button type="submit" class="bg-gray-200 hover:bg-gray-400 dark:bg-zinc-700 dark:hover:bg-zinc-600 hover:cursor-pointer px-4 py-2 rounded-lg flex items-center gap-2">
+                            <i class="fas fa-save"></i>
+                            <span>Save</span>
+                        </button>
+                    </div>
+                </form>
+                {% else %}
+                <div class="space-y-4">
+                    {% for field in custom_fields %}
+                    <div class="custom-field-item">
+                        <label class="block mb-1 text-sm font-medium">{{ field.name }}</label>
+                        <div class="border p-2 rounded-lg bg-gray-200 dark:bg-zinc-800 border-gray-600 w-full">
+                            {{ field.current_value or field.default_value or '-' }}
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% endif %}
+            </div>
+            {% endif %}
+            
             <form action="" method="POST">
                 <table class="table-auto w-full mb-6">
                     <thead>
