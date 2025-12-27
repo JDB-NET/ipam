@@ -421,6 +421,22 @@ def parse_custom_field_value(field_type, raw_value):
         # text, textarea, ip_address, email, url, select
         return str(raw_value)
 
+def validate_vlan_id(vlan_id_str):
+    """
+    Validate VLAN ID. Must be integer between 1-4094 (standard VLAN range).
+    Returns (is_valid, error_message, vlan_id_int)
+    """
+    if vlan_id_str is None or vlan_id_str == '':
+        return True, None, None
+    
+    try:
+        vlan_id = int(vlan_id_str)
+        if vlan_id < 1 or vlan_id > 4094:
+            return False, "VLAN ID must be between 1 and 4094", None
+        return True, None, vlan_id
+    except ValueError:
+        return False, "VLAN ID must be a valid integer", None
+
 def get_custom_fields_for_entity(entity_type, entity_id, conn=None):
     """
     Retrieve custom field definitions with their values for an entity.
@@ -1422,7 +1438,17 @@ def register_routes(app, limiter=None):
             from flask import current_app
             with get_db_connection(current_app) as conn:
                 custom_fields = get_custom_fields_for_entity('subnet', subnet_id, conn=conn)
-            return render_with_user('subnet.html', subnet=cached_result['subnet'], 
+                # Ensure VLAN fields are in cached subnet dict
+                subnet_dict = cached_result['subnet']
+                if 'vlan_id' not in subnet_dict:
+                    cursor = conn.cursor()
+                    cursor.execute('SELECT vlan_id, vlan_description, vlan_notes FROM Subnet WHERE id = %s', (subnet_id,))
+                    vlan_row = cursor.fetchone()
+                    if vlan_row:
+                        subnet_dict['vlan_id'] = vlan_row[0]
+                        subnet_dict['vlan_description'] = vlan_row[1]
+                        subnet_dict['vlan_notes'] = vlan_row[2]
+            return render_with_user('subnet.html', subnet=subnet_dict, 
                                   ip_addresses=cached_result['ip_addresses'], 
                                   utilization=cached_result['utilization'],
                                   custom_fields=custom_fields,
@@ -1431,7 +1457,7 @@ def register_routes(app, limiter=None):
         from flask import current_app
         with get_db_connection(current_app) as conn:
             cursor = conn.cursor()
-            cursor.execute('SELECT id, name, cidr FROM Subnet WHERE id = %s', (subnet_id,))
+            cursor.execute('SELECT id, name, cidr, vlan_id, vlan_description, vlan_notes FROM Subnet WHERE id = %s', (subnet_id,))
             subnet = cursor.fetchone()
             cursor.execute('SELECT id, ip, hostname, notes FROM IPAddress WHERE subnet_id = %s', (subnet_id,))
             ip_addresses = cursor.fetchall()
@@ -1484,7 +1510,14 @@ def register_routes(app, limiter=None):
                         device_id, device_description = match
                 ip_addresses_with_device.append((ip_id, ip_address, hostname, device_id, device_description, ip_notes))
             
-            subnet_dict = {'id': subnet[0], 'name': subnet[1], 'cidr': subnet[2]}
+            subnet_dict = {
+                'id': subnet[0], 
+                'name': subnet[1], 
+                'cidr': subnet[2],
+                'vlan_id': subnet[3] if len(subnet) > 3 else None,
+                'vlan_description': subnet[4] if len(subnet) > 4 else None,
+                'vlan_notes': subnet[5] if len(subnet) > 5 else None
+            }
             result = {
                 'subnet': subnet_dict,
                 'ip_addresses': ip_addresses_with_device,
@@ -1504,7 +1537,19 @@ def register_routes(app, limiter=None):
         name = request.form['name']
         cidr = request.form['cidr']
         site = request.form['site']
+        vlan_id_str = request.form.get('vlan_id', '').strip()
+        vlan_description = request.form.get('vlan_description', '').strip()
+        vlan_notes = request.form.get('vlan_notes', '').strip()
         user_name = get_current_user_name()
+        
+        # Validate VLAN ID if provided
+        if vlan_id_str:
+            is_valid, error_msg, vlan_id = validate_vlan_id(vlan_id_str)
+            if not is_valid:
+                return render_with_user('admin.html', subnets=[], error=error_msg)
+        else:
+            vlan_id = None
+        
         try:
             network = ip_network(cidr, strict=False)
             if network.prefixlen < 24:
@@ -1514,11 +1559,13 @@ def register_routes(app, limiter=None):
         from flask import current_app
         with get_db_connection(current_app) as conn:
             cursor = conn.cursor()
-            cursor.execute('INSERT INTO Subnet (name, cidr, site) VALUES (%s, %s, %s)', (name, cidr, site))
+            cursor.execute('INSERT INTO Subnet (name, cidr, site, vlan_id, vlan_description, vlan_notes) VALUES (%s, %s, %s, %s, %s, %s)', 
+                          (name, cidr, site, vlan_id, vlan_description if vlan_description else None, vlan_notes if vlan_notes else None))
             subnet_id = cursor.lastrowid
             ip_rows = [(str(ip), subnet_id) for ip in network.hosts()]
             cursor.executemany('INSERT INTO IPAddress (ip, subnet_id) VALUES (%s, %s)', ip_rows)
-            add_audit_log(session['user_id'], 'add_subnet', f"Added subnet {name} ({cidr})", subnet_id, conn=conn)
+            vlan_info = f" (VLAN {vlan_id})" if vlan_id else ""
+            add_audit_log(session['user_id'], 'add_subnet', f"Added subnet {name} ({cidr}){vlan_info}", subnet_id, conn=conn)
             conn.commit()
         # Invalidate cache
         cache.clear('index')
@@ -1535,7 +1582,19 @@ def register_routes(app, limiter=None):
         name = request.form['name']
         cidr = request.form['cidr']
         site = request.form['site']
+        vlan_id_str = request.form.get('vlan_id', '').strip()
+        vlan_description = request.form.get('vlan_description', '').strip()
+        vlan_notes = request.form.get('vlan_notes', '').strip()
         user_name = get_current_user_name()
+        
+        # Validate VLAN ID if provided
+        if vlan_id_str:
+            is_valid, error_msg, vlan_id = validate_vlan_id(vlan_id_str)
+            if not is_valid:
+                return render_with_user('admin.html', subnets=[], error=error_msg)
+        else:
+            vlan_id = None
+        
         from flask import current_app
         with get_db_connection(current_app) as conn:
             cursor = conn.cursor()
@@ -1543,8 +1602,10 @@ def register_routes(app, limiter=None):
             old_subnet = cursor.fetchone()
             if old_subnet:
                 old_name, old_cidr = old_subnet
-                cursor.execute('UPDATE Subnet SET name = %s, cidr = %s, site = %s WHERE id = %s', (name, cidr, site, subnet_id))
-                add_audit_log(session['user_id'], 'edit_subnet', f"Edited subnet from {old_name} ({old_cidr}) to {name} ({cidr}) at site {site}", subnet_id, conn=conn)
+                cursor.execute('UPDATE Subnet SET name = %s, cidr = %s, site = %s, vlan_id = %s, vlan_description = %s, vlan_notes = %s WHERE id = %s', 
+                              (name, cidr, site, vlan_id, vlan_description if vlan_description else None, vlan_notes if vlan_notes else None, subnet_id))
+                vlan_info = f" (VLAN {vlan_id})" if vlan_id else ""
+                add_audit_log(session['user_id'], 'edit_subnet', f"Edited subnet from {old_name} ({old_cidr}) to {name} ({cidr}) at site {site}{vlan_info}", subnet_id, conn=conn)
                 conn.commit()
         # Invalidate cache
         invalidate_cache_for_subnet(subnet_id)
@@ -1581,13 +1642,24 @@ def register_routes(app, limiter=None):
     def admin():
         cache_key = 'admin'
         cached_result = cache.get(cache_key)
+        
+        # Check if cached data has VLAN fields (for backward compatibility)
+        if cached_result is not None:
+            # Verify cached subnets have VLAN fields, if not, refresh cache
+            if cached_result.get('subnets') and len(cached_result['subnets']) > 0:
+                sample_subnet = cached_result['subnets'][0]
+                if 'vlan_id' not in sample_subnet:
+                    # Cache is stale, clear it and regenerate
+                    cache.clear(cache_key)
+                    cached_result = None
+        
         if cached_result is not None:
             return render_with_user('admin.html', **cached_result)
         
         from flask import current_app
         with get_db_connection(current_app) as conn:
             cursor = conn.cursor()
-            cursor.execute('SELECT id, name, cidr, site FROM Subnet ORDER BY site, name')
+            cursor.execute('SELECT id, name, cidr, site, vlan_id, vlan_description, vlan_notes FROM Subnet ORDER BY site, name')
             subnet_rows = cursor.fetchall()
             subnets = []
             for row in subnet_rows:
@@ -1619,6 +1691,9 @@ def register_routes(app, limiter=None):
                     'name': row[1],
                     'cidr': row[2],
                     'site': row[3] or 'Unassigned',
+                    'vlan_id': row[4] if len(row) > 4 and row[4] is not None else None,
+                    'vlan_description': row[5] if len(row) > 5 and row[5] is not None else None,
+                    'vlan_notes': row[6] if len(row) > 6 and row[6] is not None else None,
                     'utilization': {
                         'percent': round(utilization_percent, 1),
                         'assigned': assigned_ips,
@@ -3942,7 +4017,7 @@ def register_routes(app, limiter=None):
         from flask import current_app
         with get_db_connection(current_app) as conn:
             cursor = conn.cursor(dictionary=True)
-            cursor.execute('SELECT id, name, cidr, site FROM Subnet ORDER BY site, name')
+            cursor.execute('SELECT id, name, cidr, site, vlan_id, vlan_description, vlan_notes FROM Subnet ORDER BY site, name')
             subnets = cursor.fetchall()
             for subnet in subnets:
                 cursor.execute('SELECT COUNT(*) as total, COUNT(CASE WHEN hostname IS NOT NULL THEN 1 END) as used FROM IPAddress WHERE subnet_id = %s', (subnet['id'],))
@@ -3970,7 +4045,7 @@ def register_routes(app, limiter=None):
         from flask import current_app
         with get_db_connection(current_app) as conn:
             cursor = conn.cursor(dictionary=True)
-            cursor.execute('SELECT id, name, cidr, site FROM Subnet WHERE id = %s', (subnet_id,))
+            cursor.execute('SELECT id, name, cidr, site, vlan_id, vlan_description, vlan_notes FROM Subnet WHERE id = %s', (subnet_id,))
             subnet = cursor.fetchone()
             if not subnet:
                 return jsonify({'error': 'Subnet not found'}), 404
@@ -4035,6 +4110,17 @@ def register_routes(app, limiter=None):
         name = data['name']
         cidr = data['cidr']
         site = data.get('site', '')
+        vlan_id_str = str(data.get('vlan_id', '')).strip() if data.get('vlan_id') else ''
+        vlan_description = data.get('vlan_description', '').strip() if data.get('vlan_description') else ''
+        vlan_notes = data.get('vlan_notes', '').strip() if data.get('vlan_notes') else ''
+        
+        # Validate VLAN ID if provided
+        if vlan_id_str:
+            is_valid, error_msg, vlan_id = validate_vlan_id(vlan_id_str)
+            if not is_valid:
+                return jsonify({'error': error_msg}), 400
+        else:
+            vlan_id = None
         
         try:
             network = ip_network(cidr, strict=False)
@@ -4046,13 +4132,23 @@ def register_routes(app, limiter=None):
         from flask import current_app
         with get_db_connection(current_app) as conn:
             cursor = conn.cursor()
-            cursor.execute('INSERT INTO Subnet (name, cidr, site) VALUES (%s, %s, %s)', (name, cidr, site))
+            cursor.execute('INSERT INTO Subnet (name, cidr, site, vlan_id, vlan_description, vlan_notes) VALUES (%s, %s, %s, %s, %s, %s)', 
+                          (name, cidr, site, vlan_id, vlan_description if vlan_description else None, vlan_notes if vlan_notes else None))
             subnet_id = cursor.lastrowid
             ip_rows = [(str(ip), subnet_id) for ip in network.hosts()]
             cursor.executemany('INSERT INTO IPAddress (ip, subnet_id) VALUES (%s, %s)', ip_rows)
-            add_audit_log(request.api_user['id'], 'add_subnet', f"Added subnet {name} ({cidr})", subnet_id, conn=conn)
+            vlan_info = f" (VLAN {vlan_id})" if vlan_id else ""
+            add_audit_log(request.api_user['id'], 'add_subnet', f"Added subnet {name} ({cidr}){vlan_info}", subnet_id, conn=conn)
             conn.commit()
-        return jsonify({'id': subnet_id, 'name': name, 'cidr': cidr, 'site': site}), 201
+        return jsonify({
+            'id': subnet_id, 
+            'name': name, 
+            'cidr': cidr, 
+            'site': site,
+            'vlan_id': vlan_id,
+            'vlan_description': vlan_description if vlan_description else None,
+            'vlan_notes': vlan_notes if vlan_notes else None
+        }), 201
     
     @app.route('/api/v1/subnets/<int:subnet_id>', methods=['PUT'])
     @rate_limit("50 per minute")
@@ -4066,15 +4162,36 @@ def register_routes(app, limiter=None):
         from flask import current_app
         with get_db_connection(current_app) as conn:
             cursor = conn.cursor()
-            cursor.execute('SELECT name, cidr, site FROM Subnet WHERE id = %s', (subnet_id,))
+            cursor.execute('SELECT name, cidr, site, vlan_id, vlan_description, vlan_notes FROM Subnet WHERE id = %s', (subnet_id,))
             old_subnet = cursor.fetchone()
             if not old_subnet:
                 return jsonify({'error': 'Subnet not found'}), 404
-            old_name, old_cidr, old_site = old_subnet
+            old_name, old_cidr, old_site, old_vlan_id, old_vlan_desc, old_vlan_notes = old_subnet
             
             new_name = data.get('name', old_name)
             new_cidr = data.get('cidr', old_cidr)
             new_site = data.get('site', old_site)
+            
+            # Handle VLAN fields
+            vlan_id_str = str(data.get('vlan_id', '')).strip() if data.get('vlan_id') is not None else ''
+            new_vlan_description = data.get('vlan_description', '').strip() if data.get('vlan_description') else ''
+            new_vlan_notes = data.get('vlan_notes', '').strip() if data.get('vlan_notes') else ''
+            
+            # Validate VLAN ID if provided
+            if vlan_id_str:
+                is_valid, error_msg, new_vlan_id = validate_vlan_id(vlan_id_str)
+                if not is_valid:
+                    return jsonify({'error': error_msg}), 400
+            elif 'vlan_id' in data and data['vlan_id'] is None:
+                new_vlan_id = None
+            else:
+                new_vlan_id = old_vlan_id
+            
+            # Use old values if not provided in request
+            if 'vlan_description' not in data:
+                new_vlan_description = old_vlan_desc if old_vlan_desc else ''
+            if 'vlan_notes' not in data:
+                new_vlan_notes = old_vlan_notes if old_vlan_notes else ''
             
             updates = []
             values = []
@@ -4087,21 +4204,42 @@ def register_routes(app, limiter=None):
             if new_site != old_site:
                 updates.append('site = %s')
                 values.append(new_site)
+            if new_vlan_id != old_vlan_id:
+                updates.append('vlan_id = %s')
+                values.append(new_vlan_id)
+            if new_vlan_description != (old_vlan_desc or ''):
+                updates.append('vlan_description = %s')
+                values.append(new_vlan_description if new_vlan_description else None)
+            if new_vlan_notes != (old_vlan_notes or ''):
+                updates.append('vlan_notes = %s')
+                values.append(new_vlan_notes if new_vlan_notes else None)
             
             if not updates:
                 return jsonify({'error': 'No changes to apply'}), 400
             
             values.append(subnet_id)
             cursor.execute(f'UPDATE Subnet SET {", ".join(updates)} WHERE id = %s', values)
+            vlan_info = f" (VLAN {new_vlan_id})" if new_vlan_id else ""
             add_audit_log(
                 request.api_user['id'],
                 'edit_subnet',
-                f"Edited subnet from {old_name} ({old_cidr}) to {new_name} ({new_cidr}) at site {new_site or 'Unassigned'}",
+                f"Edited subnet from {old_name} ({old_cidr}) to {new_name} ({new_cidr}) at site {new_site or 'Unassigned'}{vlan_info}",
                 subnet_id,
                 conn=conn
             )
             conn.commit()
-        return jsonify({'message': 'Subnet updated successfully', 'subnet': {'id': subnet_id, 'name': new_name, 'cidr': new_cidr, 'site': new_site}})
+        return jsonify({
+            'message': 'Subnet updated successfully', 
+            'subnet': {
+                'id': subnet_id, 
+                'name': new_name, 
+                'cidr': new_cidr, 
+                'site': new_site,
+                'vlan_id': new_vlan_id,
+                'vlan_description': new_vlan_description if new_vlan_description else None,
+                'vlan_notes': new_vlan_notes if new_vlan_notes else None
+            }
+        })
     
     @app.route('/api/v1/subnets/<int:subnet_id>', methods=['DELETE'])
     @rate_limit("50 per minute")

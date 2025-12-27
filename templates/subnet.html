@@ -19,152 +19,207 @@
                     <i class="fas fa-file-csv fa-lg"></i>
                 </button>
             </div>
-            {% if utilization %}
-            <div class="hidden sm:flex justify-center mb-4">
-                <div class="bg-gray-200 dark:bg-zinc-800 px-4 py-2 rounded-lg text-sm">
-                    <span class="font-medium">{{ utilization.percent }}% used</span>
-                    <span class="text-gray-600 dark:text-gray-400 mx-2">•</span>
-                    <span class="text-gray-600 dark:text-gray-400">{{ utilization.assigned }} assigned</span>
-                    <span class="text-gray-600 dark:text-gray-400 mx-2">•</span>
-                    <span class="text-gray-600 dark:text-gray-400">{{ utilization.dhcp }} DHCP</span>
-                    <span class="text-gray-600 dark:text-gray-400 mx-2">•</span>
-                    <span class="text-gray-600 dark:text-gray-400">{{ utilization.available }} available</span>
-                </div>
-            </div>
-            {% endif %}
-            <div class="flex justify-center mb-4">
-                <a href="/subnet/{{ subnet.id }}/dhcp" class="hidden sm:flex bg-gray-200 hover:bg-gray-400 dark:bg-zinc-700 dark:hover:bg-zinc-600 px-4 py-2 rounded-lg shadow items-center gap-2">
-                    <i class="fas fa-network-wired"></i> Define DHCP Pool
-                </a>
-            </div>
-            <button id="toggle-desc" class="sm:hidden bg-gray-300 hover:bg-gray-400 dark:bg-zinc-700 dark:hover:bg-zinc-600 hover:cursor-pointer px-4 py-2 rounded-lg mb-4 w-full">Show Descriptions</button>
             
-            <!-- Custom Fields Section -->
-            {% if custom_fields %}
-            <div class="custom-fields-section mb-6 max-w-md mx-auto">
-                {% if can_edit_subnet %}
-                <form action="/subnet/{{ subnet.id }}/update_custom_fields" method="POST" id="custom-fields-form">
-                    <div class="space-y-4">
+            <!-- Info Grid: 3 columns on desktop, 1 on mobile -->
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                <!-- Utilisation Stats Column -->
+                {% if utilization %}
+                <div class="bg-gray-200 dark:bg-zinc-800 p-4 rounded-lg">
+                    <h3 class="text-lg font-bold mb-3 flex items-center gap-2">
+                        <i class="fas fa-chart-pie"></i>
+                        Utilisation
+                    </h3>
+                    <div class="space-y-2 text-sm">
+                        <div class="flex justify-between">
+                            <span class="text-gray-600 dark:text-gray-400">Used:</span>
+                            <span class="font-medium">{{ utilization.percent }}%</span>
+                        </div>
+                        <div class="flex justify-between">
+                            <span class="text-gray-600 dark:text-gray-400">Assigned:</span>
+                            <span>{{ utilization.assigned }}</span>
+                        </div>
+                        <div class="flex justify-between">
+                            <span class="text-gray-600 dark:text-gray-400">DHCP:</span>
+                            <span>{{ utilization.dhcp }}</span>
+                        </div>
+                        <div class="flex justify-between">
+                            <span class="text-gray-600 dark:text-gray-400">Available:</span>
+                            <span>{{ utilization.available }}</span>
+                        </div>
+                        <div class="flex justify-between border-t border-gray-600 pt-2 mt-2">
+                            <span class="text-gray-600 dark:text-gray-400">Total:</span>
+                            <span class="font-medium">{{ utilization.total }}</span>
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
+                
+                <!-- VLAN Information Column -->
+                {% if subnet.vlan_id or subnet.vlan_description or subnet.vlan_notes %}
+                <div class="bg-gray-200 dark:bg-zinc-800 p-4 rounded-lg">
+                    <h3 class="text-lg font-bold mb-3 flex items-center gap-2">
+                        <i class="fas fa-network-wired"></i>
+                        VLAN
+                    </h3>
+                    <div class="space-y-2 text-sm">
+                        {% if subnet.vlan_id %}
+                        <div>
+                            <span class="text-gray-600 dark:text-gray-400">ID:</span>
+                            <span class="ml-2 px-2 py-1 bg-gray-300 dark:bg-zinc-700 rounded text-sm font-mono">{{ subnet.vlan_id }}</span>
+                        </div>
+                        {% endif %}
+                        {% if subnet.vlan_description %}
+                        <div>
+                            <span class="text-gray-600 dark:text-gray-400 block mb-1">Description:</span>
+                            <span>{{ subnet.vlan_description }}</span>
+                        </div>
+                        {% endif %}
+                        {% if subnet.vlan_notes %}
+                        <div>
+                            <span class="text-gray-600 dark:text-gray-400 block mb-1">Notes:</span>
+                            <div class="whitespace-pre-wrap text-xs">{{ subnet.vlan_notes }}</div>
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+                {% endif %}
+                
+                <!-- Custom Fields Column -->
+                {% if custom_fields %}
+                <div class="bg-gray-200 dark:bg-zinc-800 p-4 rounded-lg">
+                    <h3 class="text-lg font-bold mb-3 flex items-center gap-2">
+                        <i class="fas fa-list-ul"></i>
+                        Custom Fields
+                    </h3>
+                    {% if can_edit_subnet %}
+                    <form action="/subnet/{{ subnet.id }}/update_custom_fields" method="POST" id="custom-fields-form">
+                        <div class="space-y-3">
+                            {% for field in custom_fields %}
+                            <div class="custom-field-item">
+                                <label for="custom_field_{{ field.field_key }}" class="block mb-1 text-xs font-medium">
+                                    {{ field.name }}
+                                    {% if field.required %}<span class="text-red-500">*</span>{% endif %}
+                                </label>
+                                {% if field.field_type == 'textarea' %}
+                                <textarea name="custom_field_{{ field.field_key }}" 
+                                          id="custom_field_{{ field.field_key }}"
+                                          class="border p-2 rounded-lg bg-gray-300 dark:bg-zinc-900 border-gray-600 w-full resize-y text-sm"
+                                          {% if field.required %}required{% endif %}
+                                          placeholder="{{ field.help_text or '' }}">{{ field.current_value or field.default_value or '' }}</textarea>
+                                {% elif field.field_type == 'boolean' %}
+                                <div class="flex items-center space-x-2">
+                                    <input type="checkbox" name="custom_field_{{ field.field_key }}" 
+                                           id="custom_field_{{ field.field_key }}"
+                                           value="true"
+                                           {% if field.current_value or (not field.current_value and field.default_value == 'true') %}checked{% endif %}
+                                           class="w-4 h-4">
+                                    <label for="custom_field_{{ field.field_key }}" class="text-sm">Yes</label>
+                                </div>
+                                {% elif field.field_type == 'select' %}
+                                {% set options = [] %}
+                                {% if field.validation_rules and field.validation_rules.select_options %}
+                                    {% set options = field.validation_rules.select_options %}
+                                {% endif %}
+                                <select name="custom_field_{{ field.field_key }}" 
+                                        id="custom_field_{{ field.field_key }}"
+                                        class="border p-2 rounded-lg bg-gray-300 dark:bg-zinc-900 border-gray-600 w-full text-sm"
+                                        {% if field.required %}required{% endif %}>
+                                    {% if not field.required %}
+                                    <option value="">-- None --</option>
+                                    {% endif %}
+                                    {% for option in options %}
+                                    <option value="{{ option }}" {% if field.current_value == option or (not field.current_value and field.default_value == option) %}selected{% endif %}>{{ option }}</option>
+                                    {% endfor %}
+                                </select>
+                                {% elif field.field_type == 'date' %}
+                                <input type="date" name="custom_field_{{ field.field_key }}" 
+                                       id="custom_field_{{ field.field_key }}"
+                                       class="border p-2 rounded-lg bg-gray-300 dark:bg-zinc-900 border-gray-600 w-full text-sm"
+                                       value="{{ field.current_value or field.default_value or '' }}"
+                                       {% if field.required %}required{% endif %}>
+                                {% elif field.field_type == 'datetime' %}
+                                <input type="datetime-local" name="custom_field_{{ field.field_key }}" 
+                                       id="custom_field_{{ field.field_key }}"
+                                       class="border p-2 rounded-lg bg-gray-300 dark:bg-zinc-900 border-gray-600 w-full text-sm"
+                                       value="{{ field.current_value or field.default_value or '' }}"
+                                       {% if field.required %}required{% endif %}>
+                                {% elif field.field_type == 'number' %}
+                                <input type="number" name="custom_field_{{ field.field_key }}" 
+                                       id="custom_field_{{ field.field_key }}"
+                                       class="border p-2 rounded-lg bg-gray-300 dark:bg-zinc-900 border-gray-600 w-full text-sm"
+                                       value="{{ field.current_value or field.default_value or '' }}"
+                                       {% if field.required %}required{% endif %}
+                                       {% if field.validation_rules and field.validation_rules.min_value %}min="{{ field.validation_rules.min_value }}"{% endif %}
+                                       {% if field.validation_rules and field.validation_rules.max_value %}max="{{ field.validation_rules.max_value }}"{% endif %}>
+                                {% elif field.field_type == 'decimal' %}
+                                <input type="number" step="any" name="custom_field_{{ field.field_key }}" 
+                                       id="custom_field_{{ field.field_key }}"
+                                       class="border p-2 rounded-lg bg-gray-300 dark:bg-zinc-900 border-gray-600 w-full text-sm"
+                                       value="{{ field.current_value or field.default_value or '' }}"
+                                       {% if field.required %}required{% endif %}
+                                       {% if field.validation_rules and field.validation_rules.min_value %}min="{{ field.validation_rules.min_value }}"{% endif %}
+                                       {% if field.validation_rules and field.validation_rules.max_value %}max="{{ field.validation_rules.max_value }}"{% endif %}>
+                                {% elif field.field_type == 'ip_address' %}
+                                <input type="text" name="custom_field_{{ field.field_key }}" 
+                                       id="custom_field_{{ field.field_key }}"
+                                       class="border p-2 rounded-lg bg-gray-300 dark:bg-zinc-900 border-gray-600 w-full font-mono text-sm"
+                                       value="{{ field.current_value or field.default_value or '' }}"
+                                       placeholder="192.168.1.1"
+                                       {% if field.required %}required{% endif %}>
+                                {% elif field.field_type == 'email' %}
+                                <input type="email" name="custom_field_{{ field.field_key }}" 
+                                       id="custom_field_{{ field.field_key }}"
+                                       class="border p-2 rounded-lg bg-gray-300 dark:bg-zinc-900 border-gray-600 w-full text-sm"
+                                       value="{{ field.current_value or field.default_value or '' }}"
+                                       placeholder="user@example.com"
+                                       {% if field.required %}required{% endif %}>
+                                {% elif field.field_type == 'url' %}
+                                <input type="url" name="custom_field_{{ field.field_key }}" 
+                                       id="custom_field_{{ field.field_key }}"
+                                       class="border p-2 rounded-lg bg-gray-300 dark:bg-zinc-900 border-gray-600 w-full text-sm"
+                                       value="{{ field.current_value or field.default_value or '' }}"
+                                       placeholder="https://example.com"
+                                       {% if field.required %}required{% endif %}>
+                                {% else %}
+                                <input type="text" name="custom_field_{{ field.field_key }}" 
+                                       id="custom_field_{{ field.field_key }}"
+                                       class="border p-2 rounded-lg bg-gray-300 dark:bg-zinc-900 border-gray-600 w-full text-sm"
+                                       value="{{ field.current_value or field.default_value or '' }}"
+                                       placeholder="{{ field.help_text or '' }}"
+                                       {% if field.required %}required{% endif %}
+                                       {% if field.validation_rules and field.validation_rules.min_length %}minlength="{{ field.validation_rules.min_length }}"{% endif %}
+                                       {% if field.validation_rules and field.validation_rules.max_length %}maxlength="{{ field.validation_rules.max_length }}"{% endif %}>
+                                {% endif %}
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </form>
+                    {% else %}
+                    <div class="space-y-3">
                         {% for field in custom_fields %}
                         <div class="custom-field-item">
-                            <label for="custom_field_{{ field.field_key }}" class="block mb-1 text-sm font-medium">
-                                {{ field.name }}
-                                {% if field.required %}<span class="text-red-500">*</span>{% endif %}
-                                {% if field.help_text %}
-                                <span class="text-xs text-gray-500 dark:text-gray-400 ml-2" title="{{ field.help_text }}">
-                                    <i class="fas fa-info-circle"></i>
-                                </span>
-                                {% endif %}
-                            </label>
-                            {% if field.field_type == 'textarea' %}
-                            <textarea name="custom_field_{{ field.field_key }}" 
-                                      id="custom_field_{{ field.field_key }}"
-                                      class="border p-2 rounded-lg bg-gray-200 dark:bg-zinc-800 border-gray-600 w-full resize-y"
-                                      {% if field.required %}required{% endif %}
-                                      placeholder="{{ field.help_text or '' }}">{{ field.current_value or field.default_value or '' }}</textarea>
-                            {% elif field.field_type == 'boolean' %}
-                            <div class="flex items-center space-x-2">
-                                <input type="checkbox" name="custom_field_{{ field.field_key }}" 
-                                       id="custom_field_{{ field.field_key }}"
-                                       value="true"
-                                       {% if field.current_value or (not field.current_value and field.default_value == 'true') %}checked{% endif %}
-                                       class="w-4 h-4">
-                                <label for="custom_field_{{ field.field_key }}" class="text-sm">Yes</label>
+                            <label class="block mb-1 text-xs font-medium">{{ field.name }}</label>
+                            <div class="border p-2 rounded-lg bg-gray-300 dark:bg-zinc-900 border-gray-600 w-full text-sm">
+                                {{ field.current_value or field.default_value or '-' }}
                             </div>
-                            {% elif field.field_type == 'select' %}
-                            {% set options = [] %}
-                            {% if field.validation_rules and field.validation_rules.select_options %}
-                                {% set options = field.validation_rules.select_options %}
-                            {% endif %}
-                            <select name="custom_field_{{ field.field_key }}" 
-                                    id="custom_field_{{ field.field_key }}"
-                                    class="border p-2 rounded-lg bg-gray-200 dark:bg-zinc-800 border-gray-600 w-full"
-                                    {% if field.required %}required{% endif %}>
-                                {% if not field.required %}
-                                <option value="">-- None --</option>
-                                {% endif %}
-                                {% for option in options %}
-                                <option value="{{ option }}" {% if field.current_value == option or (not field.current_value and field.default_value == option) %}selected{% endif %}>{{ option }}</option>
-                                {% endfor %}
-                            </select>
-                            {% elif field.field_type == 'date' %}
-                            <input type="date" name="custom_field_{{ field.field_key }}" 
-                                   id="custom_field_{{ field.field_key }}"
-                                   class="border p-2 rounded-lg bg-gray-200 dark:bg-zinc-800 border-gray-600 w-full"
-                                   value="{{ field.current_value or field.default_value or '' }}"
-                                   {% if field.required %}required{% endif %}>
-                            {% elif field.field_type == 'datetime' %}
-                            <input type="datetime-local" name="custom_field_{{ field.field_key }}" 
-                                   id="custom_field_{{ field.field_key }}"
-                                   class="border p-2 rounded-lg bg-gray-200 dark:bg-zinc-800 border-gray-600 w-full"
-                                   value="{{ field.current_value or field.default_value or '' }}"
-                                   {% if field.required %}required{% endif %}>
-                            {% elif field.field_type == 'number' %}
-                            <input type="number" name="custom_field_{{ field.field_key }}" 
-                                   id="custom_field_{{ field.field_key }}"
-                                   class="border p-2 rounded-lg bg-gray-200 dark:bg-zinc-800 border-gray-600 w-full"
-                                   value="{{ field.current_value or field.default_value or '' }}"
-                                   {% if field.required %}required{% endif %}
-                                   {% if field.validation_rules and field.validation_rules.min_value %}min="{{ field.validation_rules.min_value }}"{% endif %}
-                                   {% if field.validation_rules and field.validation_rules.max_value %}max="{{ field.validation_rules.max_value }}"{% endif %}>
-                            {% elif field.field_type == 'decimal' %}
-                            <input type="number" step="any" name="custom_field_{{ field.field_key }}" 
-                                   id="custom_field_{{ field.field_key }}"
-                                   class="border p-2 rounded-lg bg-gray-200 dark:bg-zinc-800 border-gray-600 w-full"
-                                   value="{{ field.current_value or field.default_value or '' }}"
-                                   {% if field.required %}required{% endif %}
-                                   {% if field.validation_rules and field.validation_rules.min_value %}min="{{ field.validation_rules.min_value }}"{% endif %}
-                                   {% if field.validation_rules and field.validation_rules.max_value %}max="{{ field.validation_rules.max_value }}"{% endif %}>
-                            {% elif field.field_type == 'ip_address' %}
-                            <input type="text" name="custom_field_{{ field.field_key }}" 
-                                   id="custom_field_{{ field.field_key }}"
-                                   class="border p-2 rounded-lg bg-gray-200 dark:bg-zinc-800 border-gray-600 w-full font-mono"
-                                   value="{{ field.current_value or field.default_value or '' }}"
-                                   placeholder="192.168.1.1"
-                                   {% if field.required %}required{% endif %}>
-                            {% elif field.field_type == 'email' %}
-                            <input type="email" name="custom_field_{{ field.field_key }}" 
-                                   id="custom_field_{{ field.field_key }}"
-                                   class="border p-2 rounded-lg bg-gray-200 dark:bg-zinc-800 border-gray-600 w-full"
-                                   value="{{ field.current_value or field.default_value or '' }}"
-                                   placeholder="user@example.com"
-                                   {% if field.required %}required{% endif %}>
-                            {% elif field.field_type == 'url' %}
-                            <input type="url" name="custom_field_{{ field.field_key }}" 
-                                   id="custom_field_{{ field.field_key }}"
-                                   class="border p-2 rounded-lg bg-gray-200 dark:bg-zinc-800 border-gray-600 w-full"
-                                   value="{{ field.current_value or field.default_value or '' }}"
-                                   placeholder="https://example.com"
-                                   {% if field.required %}required{% endif %}>
-                            {% else %}
-                            <input type="text" name="custom_field_{{ field.field_key }}" 
-                                   id="custom_field_{{ field.field_key }}"
-                                   class="border p-2 rounded-lg bg-gray-200 dark:bg-zinc-800 border-gray-600 w-full"
-                                   value="{{ field.current_value or field.default_value or '' }}"
-                                   placeholder="{{ field.help_text or '' }}"
-                                   {% if field.required %}required{% endif %}
-                                   {% if field.validation_rules and field.validation_rules.min_length %}minlength="{{ field.validation_rules.min_length }}"{% endif %}
-                                   {% if field.validation_rules and field.validation_rules.max_length %}maxlength="{{ field.validation_rules.max_length }}"{% endif %}>
-                            {% endif %}
                         </div>
                         {% endfor %}
                     </div>
-                </form>
-                {% else %}
-                <div class="space-y-4">
-                    {% for field in custom_fields %}
-                    <div class="custom-field-item">
-                        <label class="block mb-1 text-sm font-medium">{{ field.name }}</label>
-                        <div class="border p-2 rounded-lg bg-gray-200 dark:bg-zinc-800 border-gray-600 w-full">
-                            {{ field.current_value or field.default_value or '-' }}
-                        </div>
-                    </div>
-                    {% endfor %}
+                    {% endif %}
                 </div>
                 {% endif %}
             </div>
-            {% endif %}
             
+            <!-- Actions Row -->
+            <div class="flex justify-center mb-4 gap-2">
+                <a href="/subnet/{{ subnet.id }}/dhcp" class="bg-gray-200 hover:bg-gray-400 dark:bg-zinc-700 dark:hover:bg-zinc-600 px-4 py-2 rounded-lg shadow items-center gap-2 flex">
+                    <i class="fas fa-network-wired"></i> <span class="hidden sm:inline">Define </span>DHCP Pool
+                </a>
+            </div>
+            
+            <button id="toggle-desc" class="sm:hidden bg-gray-300 hover:bg-gray-400 dark:bg-zinc-700 dark:hover:bg-zinc-600 hover:cursor-pointer px-4 py-2 rounded-lg mb-4 w-full">Show Descriptions</button>
+            
+            <!-- IP Address Table -->
             <form action="" method="POST">
                 <table class="table-auto w-full mb-6">
                     <thead>

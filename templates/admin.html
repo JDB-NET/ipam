@@ -107,6 +107,7 @@
                                 <th class="text-center p-3">Name</th>
                                 <th class="text-center p-3">CIDR</th>
                                 <th class="text-center p-3">Site</th>
+                                <th class="text-center p-3">VLAN ID</th>
                                 <th class="text-center p-3">Utilisation</th>
                                 <th class="text-center p-3">Actions</th>
                             </tr>
@@ -118,6 +119,13 @@
                                 <td class="p-3 font-mono text-sm text-center">{{ subnet.cidr }}</td>
                                 <td class="p-3 text-center">
                                     <span class="px-2 py-1 bg-gray-300 dark:bg-zinc-700 rounded text-sm">{{ subnet.site }}</span>
+                                </td>
+                                <td class="p-3 text-center">
+                                    {% if subnet.vlan_id %}
+                                    <span class="px-2 py-1 bg-gray-300 dark:bg-zinc-700 rounded text-sm font-mono">{{ subnet.vlan_id }}</span>
+                                    {% else %}
+                                    <span class="text-sm text-gray-500">—</span>
+                                    {% endif %}
                                 </td>
                                 <td class="p-3 text-center">
                                     {% if subnet.utilization %}
@@ -133,7 +141,7 @@
                                             <i class="fas fa-eye"></i>
                                         </a>
                                         {% if can_edit_subnet %}
-                                        <button onclick="editSubnet({{ subnet.id }}, '{{ subnet.name|replace("'", "\\'") }}', '{{ subnet.cidr|replace("'", "\\'") }}', '{{ subnet.site|replace("'", "\\'") }}')" class="text-gray-900 hover:text-gray-600 dark:text-gray-100 dark:hover:text-gray-300 hover:cursor-pointer" title="Edit Subnet">
+                                        <button onclick="editSubnet({{ subnet.id }}, '{{ subnet.name|replace("'", "\\'") }}', '{{ subnet.cidr|replace("'", "\\'") }}', '{{ subnet.site|replace("'", "\\'") }}', {{ subnet.vlan_id if subnet.vlan_id else 'null' }}, '{{ subnet.vlan_description|replace("'", "\\'") if subnet.vlan_description else "" }}', '{{ subnet.vlan_notes|replace("'", "\\'")|replace("\n", "\\n") if subnet.vlan_notes else "" }}')" class="text-gray-900 hover:text-gray-600 dark:text-gray-100 dark:hover:text-gray-300 hover:cursor-pointer" title="Edit Subnet">
                                             <i class="fas fa-edit"></i>
                                         </button>
                                         {% endif %}
@@ -176,7 +184,11 @@
                     <input type="text" name="name" id="add-subnet-name" placeholder="Subnet Name" class="border p-3 rounded-lg bg-gray-300 text-gray-900 dark:bg-zinc-900 dark:text-gray-100 border-gray-600 w-full" required>
                     <input type="text" name="cidr" id="add-subnet-cidr" placeholder="CIDR (e.g., 192.168.1.0/24)" class="border p-3 rounded-lg bg-gray-300 text-gray-900 dark:bg-zinc-900 dark:text-gray-100 border-gray-600 w-full" required>
                     <input type="text" name="site" id="add-subnet-site" placeholder="Site/Location" class="border p-3 rounded-lg bg-gray-300 text-gray-900 dark:bg-zinc-900 dark:text-gray-100 border-gray-600 w-full" required>
+                    <input type="number" name="vlan_id" id="add-subnet-vlan-id" placeholder="VLAN ID (1-4094, optional)" min="1" max="4094" class="border p-3 rounded-lg bg-gray-300 text-gray-900 dark:bg-zinc-900 dark:text-gray-100 border-gray-600 w-full">
+                    <input type="text" name="vlan_description" id="add-subnet-vlan-description" placeholder="VLAN Description (optional)" class="border p-3 rounded-lg bg-gray-300 text-gray-900 dark:bg-zinc-900 dark:text-gray-100 border-gray-600 w-full">
+                    <textarea name="vlan_notes" id="add-subnet-vlan-notes" placeholder="VLAN Notes (optional)" rows="3" class="border p-3 rounded-lg bg-gray-300 text-gray-900 dark:bg-zinc-900 dark:text-gray-100 border-gray-600 w-full resize-y"></textarea>
                     <span id="cidr-error" class="text-red-500 text-sm hidden"></span>
+                    <span id="vlan-id-error" class="text-red-500 text-sm hidden"></span>
                 </div>
                 <div class="flex justify-end space-x-2 mt-6">
                     <button type="button" onclick="closeAddSubnetModal()" class="px-4 py-2 bg-gray-300 hover:bg-gray-400 dark:bg-zinc-700 dark:hover:bg-zinc-600 hover:cursor-pointer rounded-lg">Cancel</button>
@@ -201,7 +213,11 @@
                     <input type="text" name="name" id="edit-subnet-name" placeholder="Subnet Name" class="border p-3 rounded-lg bg-gray-300 text-gray-900 dark:bg-zinc-900 dark:text-gray-100 border-gray-600 w-full" required>
                     <input type="text" name="cidr" id="edit-subnet-cidr" placeholder="CIDR (e.g., 192.168.1.0/24)" class="border p-3 rounded-lg bg-gray-300 text-gray-900 dark:bg-zinc-900 dark:text-gray-100 border-gray-600 w-full" required>
                     <input type="text" name="site" id="edit-subnet-site" placeholder="Site/Location" class="border p-3 rounded-lg bg-gray-300 text-gray-900 dark:bg-zinc-900 dark:text-gray-100 border-gray-600 w-full" required>
+                    <input type="number" name="vlan_id" id="edit-subnet-vlan-id" placeholder="VLAN ID (1-4094, optional)" min="1" max="4094" class="border p-3 rounded-lg bg-gray-300 text-gray-900 dark:bg-zinc-900 dark:text-gray-100 border-gray-600 w-full">
+                    <input type="text" name="vlan_description" id="edit-subnet-vlan-description" placeholder="VLAN Description (optional)" class="border p-3 rounded-lg bg-gray-300 text-gray-900 dark:bg-zinc-900 dark:text-gray-100 border-gray-600 w-full">
+                    <textarea name="vlan_notes" id="edit-subnet-vlan-notes" placeholder="VLAN Notes (optional)" rows="3" class="border p-3 rounded-lg bg-gray-300 text-gray-900 dark:bg-zinc-900 dark:text-gray-100 border-gray-600 w-full resize-y"></textarea>
                     <span id="edit-cidr-error" class="text-red-500 text-sm hidden"></span>
+                    <span id="edit-vlan-id-error" class="text-red-500 text-sm hidden"></span>
                 </div>
                 <div class="flex justify-end space-x-2 mt-6">
                     <button type="button" onclick="closeEditSubnetModal()" class="px-4 py-2 bg-gray-200 hover:bg-gray-400 dark:bg-zinc-700 dark:hover:bg-zinc-600 hover:cursor-pointer rounded-lg">Cancel</button>

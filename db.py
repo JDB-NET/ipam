@@ -337,6 +337,19 @@ def init_db(app=None):
     if not cursor.fetchone():
         cursor.execute('ALTER TABLE IPAddress ADD COLUMN notes TEXT DEFAULT NULL')
     
+    # Add VLAN columns to Subnet table if they don't exist
+    cursor.execute("SHOW COLUMNS FROM Subnet LIKE 'vlan_id'")
+    if not cursor.fetchone():
+        cursor.execute('ALTER TABLE Subnet ADD COLUMN vlan_id INTEGER DEFAULT NULL')
+    
+    cursor.execute("SHOW COLUMNS FROM Subnet LIKE 'vlan_description'")
+    if not cursor.fetchone():
+        cursor.execute('ALTER TABLE Subnet ADD COLUMN vlan_description VARCHAR(255) DEFAULT NULL')
+    
+    cursor.execute("SHOW COLUMNS FROM Subnet LIKE 'vlan_notes'")
+    if not cursor.fetchone():
+        cursor.execute('ALTER TABLE Subnet ADD COLUMN vlan_notes TEXT DEFAULT NULL')
+    
     # Define all permissions with categories
     permissions = [
         # View permissions
