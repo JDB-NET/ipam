@@ -1,4 +1,6 @@
 from flask import Flask, session
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 from db import init_db, hash_password, get_db_connection
 from routes import register_routes
 import os
@@ -14,6 +16,14 @@ app.config['MYSQL_HOST'] = os.environ.get('MYSQL_HOST', 'localhost')
 app.config['MYSQL_USER'] = os.environ.get('MYSQL_USER', 'user')
 app.config['MYSQL_PASSWORD'] = os.environ.get('MYSQL_PASSWORD', 'password')
 app.config['MYSQL_DATABASE'] = os.environ.get('MYSQL_DATABASE', 'ipam')
+
+# Initialize rate limiter
+limiter = Limiter(
+    app=app,
+    key_func=get_remote_address,
+    default_limits=["200 per hour", "50 per minute"],
+    storage_uri="memory://"
+)
 
 @app.context_processor
 def inject_env_vars():
@@ -36,7 +46,7 @@ def inject_env_vars():
         'has_permission': has_permission
     }
 
-register_routes(app)
+register_routes(app, limiter)
 init_db(app)
 
 # Start cache pre-warming in background

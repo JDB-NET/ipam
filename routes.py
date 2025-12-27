@@ -404,8 +404,19 @@ def prewarm_cache(app):
     thread.start()
     logging.info("Started background cache pre-warming thread")
 
-def register_routes(app):
+def register_routes(app, limiter=None):
     logging.basicConfig(level=logging.INFO)
+    
+    # Helper function to apply rate limiting if limiter is available
+    def rate_limit(limit_str):
+        """Apply rate limiting decorator if limiter is available"""
+        if limiter:
+            return limiter.limit(limit_str)
+        else:
+            # Return a no-op decorator if limiter is not available
+            def noop_decorator(f):
+                return f
+            return noop_decorator
 
     @app.route('/login', methods=['GET', 'POST'])
     def login():
@@ -2792,6 +2803,7 @@ def register_routes(app):
     # ========== API ROUTES ==========
     
     @app.route('/api/v1/info', methods=['GET'])
+    @rate_limit("100 per minute")
     @api_auth_required
     def api_info():
         """Get API information and authenticated user info"""
@@ -2806,6 +2818,7 @@ def register_routes(app):
     
     # Devices API
     @app.route('/api/v1/devices', methods=['GET'])
+    @rate_limit("100 per minute")
     @api_permission_required('view_devices')
     def api_devices():
         """Get all devices"""
@@ -2839,6 +2852,7 @@ def register_routes(app):
         return jsonify({'devices': devices})
     
     @app.route('/api/v1/devices/<int:device_id>', methods=['GET'])
+    @rate_limit("100 per minute")
     @api_permission_required('view_device')
     def api_device(device_id):
         """Get a specific device"""
@@ -2873,6 +2887,7 @@ def register_routes(app):
         return jsonify(device)
     
     @app.route('/api/v1/devices', methods=['POST'])
+    @rate_limit("50 per minute")
     @api_permission_required('add_device')
     def api_add_device():
         """Create a new device"""
@@ -2895,6 +2910,7 @@ def register_routes(app):
         return jsonify({'id': device_id, 'name': name, 'description': description, 'device_type_id': device_type_id}), 201
     
     @app.route('/api/v1/devices/<int:device_id>', methods=['PUT'])
+    @rate_limit("50 per minute")
     @api_permission_required('edit_device')
     def api_update_device(device_id):
         """Update a device"""
@@ -2942,6 +2958,7 @@ def register_routes(app):
         return jsonify({'message': 'Device updated successfully', 'device': {'id': device_id, 'name': new_name}})
     
     @app.route('/api/v1/devices/<int:device_id>', methods=['DELETE'])
+    @rate_limit("50 per minute")
     @api_permission_required('delete_device')
     def api_delete_device(device_id):
         """Delete a device"""
@@ -2978,6 +2995,7 @@ def register_routes(app):
         return jsonify({'message': 'Device deleted successfully', 'device': {'id': device_id, 'name': device_name}})
     
     @app.route('/api/v1/devices/<int:device_id>/ips', methods=['POST'])
+    @rate_limit("50 per minute")
     @api_permission_required('add_device_ip')
     def api_add_device_ip(device_id):
         """Add an IP address to a device"""
@@ -3040,6 +3058,7 @@ def register_routes(app):
         return jsonify({'message': 'IP address added to device successfully', 'ip_id': ip_id}), 201
     
     @app.route('/api/v1/devices/<int:device_id>/ips/<int:ip_id>', methods=['DELETE'])
+    @rate_limit("50 per minute")
     @api_permission_required('remove_device_ip')
     def api_remove_device_ip(device_id, ip_id):
         """Remove an IP address from a device"""
@@ -3072,6 +3091,7 @@ def register_routes(app):
     
     # Subnets API
     @app.route('/api/v1/subnets', methods=['GET'])
+    @rate_limit("100 per minute")
     @api_permission_required('view_subnet')
     def api_subnets():
         """Get all subnets"""
@@ -3089,6 +3109,7 @@ def register_routes(app):
         return jsonify({'subnets': subnets})
     
     @app.route('/api/v1/subnets/<int:subnet_id>', methods=['GET'])
+    @rate_limit("100 per minute")
     @api_permission_required('view_subnet')
     def api_subnet(subnet_id):
         """Get a specific subnet with IP addresses"""
@@ -3111,6 +3132,7 @@ def register_routes(app):
         return jsonify(subnet)
     
     @app.route('/api/v1/subnets/<int:subnet_id>/next_free_ip', methods=['GET'])
+    @rate_limit("100 per minute")
     @api_permission_required('view_subnet')
     def api_subnet_next_free_ip(subnet_id):
         """Get the next free IP address in a subnet"""
@@ -3138,6 +3160,7 @@ def register_routes(app):
             return jsonify({'id': result['id'], 'ip': result['ip']})
     
     @app.route('/api/v1/subnets', methods=['POST'])
+    @rate_limit("50 per minute")
     @api_permission_required('add_subnet')
     def api_add_subnet():
         """Create a new subnet"""
@@ -3168,6 +3191,7 @@ def register_routes(app):
         return jsonify({'id': subnet_id, 'name': name, 'cidr': cidr, 'site': site}), 201
     
     @app.route('/api/v1/subnets/<int:subnet_id>', methods=['PUT'])
+    @rate_limit("50 per minute")
     @api_permission_required('edit_subnet')
     def api_update_subnet(subnet_id):
         """Update a subnet"""
@@ -3216,6 +3240,7 @@ def register_routes(app):
         return jsonify({'message': 'Subnet updated successfully', 'subnet': {'id': subnet_id, 'name': new_name, 'cidr': new_cidr, 'site': new_site}})
     
     @app.route('/api/v1/subnets/<int:subnet_id>', methods=['DELETE'])
+    @rate_limit("50 per minute")
     @api_permission_required('delete_subnet')
     def api_delete_subnet(subnet_id):
         """Delete a subnet"""
@@ -3241,6 +3266,7 @@ def register_routes(app):
     
     # Racks API
     @app.route('/api/v1/racks', methods=['GET'])
+    @rate_limit("100 per minute")
     @api_permission_required('view_racks')
     def api_racks():
         """Get all racks"""
@@ -3266,6 +3292,7 @@ def register_routes(app):
         return jsonify({'racks': racks})
     
     @app.route('/api/v1/racks/<int:rack_id>', methods=['GET'])
+    @rate_limit("100 per minute")
     @api_permission_required('view_rack')
     def api_rack(rack_id):
         """Get a specific rack"""
@@ -3288,6 +3315,7 @@ def register_routes(app):
         return jsonify(rack)
     
     @app.route('/api/v1/racks', methods=['POST'])
+    @rate_limit("50 per minute")
     @api_permission_required('add_rack')
     def api_add_rack():
         """Create a new rack"""
@@ -3315,6 +3343,7 @@ def register_routes(app):
         return jsonify({'id': rack_id, 'name': name, 'site': site, 'height_u': height_u}), 201
     
     @app.route('/api/v1/racks/<int:rack_id>', methods=['DELETE'])
+    @rate_limit("50 per minute")
     @api_permission_required('delete_rack')
     def api_delete_rack(rack_id):
         """Delete a rack"""
@@ -3332,6 +3361,7 @@ def register_routes(app):
         return jsonify({'message': 'Rack deleted successfully', 'rack': {'id': rack_id, 'name': rack_name}})
     
     @app.route('/api/v1/racks/<int:rack_id>/devices', methods=['POST'])
+    @rate_limit("50 per minute")
     @api_permission_required('add_device_to_rack')
     def api_add_device_to_rack(rack_id):
         """Add a device to a rack"""
@@ -3416,6 +3446,7 @@ def register_routes(app):
         }), 201
     
     @app.route('/api/v1/racks/<int:rack_id>/devices/<int:rack_device_id>', methods=['DELETE'])
+    @rate_limit("50 per minute")
     @api_permission_required('remove_device_from_rack')
     def api_remove_device_from_rack(rack_id, rack_device_id):
         """Remove a device from a rack"""
@@ -3449,6 +3480,7 @@ def register_routes(app):
     
     # Device Types API
     @app.route('/api/v1/device-types', methods=['GET'])
+    @rate_limit("100 per minute")
     @api_permission_required('view_device_types')
     def api_device_types():
         """Get all device types"""
@@ -3461,6 +3493,7 @@ def register_routes(app):
     
     # DHCP API
     @app.route('/api/v1/subnets/<int:subnet_id>/dhcp', methods=['GET'])
+    @rate_limit("100 per minute")
     @api_permission_required('view_dhcp')
     def api_get_dhcp(subnet_id):
         """Get DHCP pools for a subnet"""
@@ -3472,6 +3505,7 @@ def register_routes(app):
         return jsonify({'pools': pools})
     
     @app.route('/api/v1/subnets/<int:subnet_id>/dhcp', methods=['POST'])
+    @rate_limit("50 per minute")
     @api_permission_required('configure_dhcp')
     def api_configure_dhcp(subnet_id):
         """Configure DHCP pools for a subnet"""
@@ -3561,6 +3595,7 @@ def register_routes(app):
     
     # Tags API
     @app.route('/api/v1/tags', methods=['GET'])
+    @rate_limit("100 per minute")
     @api_permission_required('view_tags')
     def api_tags():
         """Get all tags"""
@@ -3575,6 +3610,7 @@ def register_routes(app):
         return jsonify({'tags': tags})
     
     @app.route('/api/v1/tags', methods=['POST'])
+    @rate_limit("50 per minute")
     @api_permission_required('add_tag')
     def api_add_tag():
         """Create a new tag"""
@@ -3605,6 +3641,7 @@ def register_routes(app):
                 return jsonify({'error': 'Tag name already exists'}), 400
     
     @app.route('/api/v1/tags/<int:tag_id>', methods=['GET'])
+    @rate_limit("100 per minute")
     @api_permission_required('view_tags')
     def api_tag(tag_id):
         """Get a specific tag"""
@@ -3627,6 +3664,7 @@ def register_routes(app):
         return jsonify(tag)
     
     @app.route('/api/v1/tags/<int:tag_id>', methods=['PUT'])
+    @rate_limit("50 per minute")
     @api_permission_required('edit_tag')
     def api_update_tag(tag_id):
         """Update a tag"""
@@ -3677,6 +3715,7 @@ def register_routes(app):
                 return jsonify({'error': 'Tag name already exists'}), 400
     
     @app.route('/api/v1/tags/<int:tag_id>', methods=['DELETE'])
+    @rate_limit("50 per minute")
     @api_permission_required('delete_tag')
     def api_delete_tag(tag_id):
         """Delete a tag"""
@@ -3697,6 +3736,7 @@ def register_routes(app):
         return jsonify({'message': 'Tag deleted successfully'})
     
     @app.route('/api/v1/devices/<int:device_id>/tags', methods=['GET'])
+    @rate_limit("100 per minute")
     @api_permission_required('view_device')
     def api_device_tags(device_id):
         """Get tags for a specific device"""
@@ -3717,6 +3757,7 @@ def register_routes(app):
         return jsonify({'tags': tags})
     
     @app.route('/api/v1/devices/<int:device_id>/tags', methods=['POST'])
+    @rate_limit("50 per minute")
     @api_permission_required('assign_device_tag')
     def api_assign_device_tag(device_id):
         """Assign a tag to a device"""
@@ -3752,6 +3793,7 @@ def register_routes(app):
         return jsonify({'message': 'Tag assigned successfully'})
     
     @app.route('/api/v1/devices/<int:device_id>/tags/<int:tag_id>', methods=['DELETE'])
+    @rate_limit("50 per minute")
     @api_permission_required('remove_device_tag')
     def api_remove_device_tag(device_id, tag_id):
         """Remove a tag from a device"""
@@ -3782,6 +3824,7 @@ def register_routes(app):
         return jsonify({'message': 'Tag removed successfully'})
     
     @app.route('/api/v1/devices/by-tag/<tag_identifier>', methods=['GET'])
+    @rate_limit("100 per minute")
     @api_permission_required('view_devices')
     def api_devices_by_tag(tag_identifier):
         """Get devices by tag name or ID. Use ?format=simple for simplified response."""
@@ -3894,6 +3937,7 @@ def register_routes(app):
     
     # Audit Log API
     @app.route('/api/v1/audit', methods=['GET'])
+    @rate_limit("100 per minute")
     @api_permission_required('view_audit')
     def api_audit():
         """Get audit log entries"""
@@ -3914,6 +3958,7 @@ def register_routes(app):
     
     # Users API (admin only)
     @app.route('/api/v1/users', methods=['GET'])
+    @rate_limit("100 per minute")
     @api_permission_required('view_users')
     def api_users():
         """Get all users (admin only)"""
@@ -3934,6 +3979,7 @@ def register_routes(app):
     
     # Roles API (admin only)
     @app.route('/api/v1/roles', methods=['GET'])
+    @rate_limit("100 per minute")
     @api_permission_required('view_users')
     def api_roles():
         """Get all roles (admin only)"""

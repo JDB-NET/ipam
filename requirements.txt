@@ -5,3 +5,4 @@ gunicorn
 requests
 pyotp
 qrcode[pil]
+Flask-Limiter
