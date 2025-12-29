@@ -207,7 +207,7 @@ def get_ip_history_from_audit_logs(device_id=None, ip_address=None, conn=None):
             cursor.execute('SELECT name FROM Device WHERE id = %s', (device_id,))
             device_result = cursor.fetchone()
             if device_result:
-                device_name = device_result[0]
+                device_name = device_result['name']
             else:
                 # Device doesn't exist, return empty history
                 return []
