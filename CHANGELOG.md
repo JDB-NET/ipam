@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.9.1](https://github.com/JDB-NET/ipam/compare/v1.9.0...v1.9.1) (2025-12-29)
+
+
+### Bug Fixes
+
+* :bug: device page dictionary ([83c1b21](https://github.com/JDB-NET/ipam/commit/83c1b21c04163e22c25831ee8064f3cd5ea2c99d))
+
 ## [1.9.0](https://github.com/JDB-NET/ipam/compare/v1.8.0...v1.9.0) (2025-12-27)
 
 
