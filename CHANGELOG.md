@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.10.0](https://github.com/JDB-NET/ipam/compare/v1.9.1...v1.10.0) (2025-12-31)
+
+
+### Features
+
+* :sparkles: feature flags ([c1b0a70](https://github.com/JDB-NET/ipam/commit/c1b0a7084b7de1c476d588b9b71db0c267051c59))
+
 ## [1.9.1](https://github.com/JDB-NET/ipam/compare/v1.9.0...v1.9.1) (2025-12-29)
 
 
