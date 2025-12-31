@@ -22,7 +22,9 @@
                 <div class="flex space-x-4">
                     <button onclick="showTab('assign-ips')" id="tab-assign-ips" class="tab-btn px-4 py-2 font-medium border-b-2 border-gray-600 text-gray-900 dark:text-gray-100 hover:cursor-pointer">Bulk IP Assignment</button>
                     <button onclick="showTab('create-devices')" id="tab-create-devices" class="tab-btn px-4 py-2 font-medium border-b-2 border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 hover:cursor-pointer">Bulk Device Creation</button>
+                    {% if is_feature_enabled('device_tags') %}
                     <button onclick="showTab('assign-tags')" id="tab-assign-tags" class="tab-btn px-4 py-2 font-medium border-b-2 border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 hover:cursor-pointer">Bulk Tag Assignment</button>
+                    {% endif %}
                     <button onclick="showTab('export')" id="tab-export" class="tab-btn px-4 py-2 font-medium border-b-2 border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 hover:cursor-pointer">Bulk Export</button>
                 </div>
             </div>
@@ -94,6 +96,7 @@
             </div>
             
             <!-- Bulk Tag Assignment -->
+            {% if is_feature_enabled('device_tags') %}
             <div id="panel-assign-tags" class="tab-panel hidden bg-gray-200 dark:bg-zinc-800 p-6 rounded-lg shadow-md">
                 {% if can_assign_device_tag %}
                 <h2 class="text-2xl font-bold mb-4">Bulk Tag Assignment</h2>
@@ -123,6 +126,7 @@
                 <p class="text-gray-500">You don't have permission to assign tags to devices.</p>
                 {% endif %}
             </div>
+            {% endif %}
             
             <!-- Bulk Export -->
             <div id="panel-export" class="tab-panel hidden bg-gray-200 dark:bg-zinc-800 p-6 rounded-lg shadow-md">

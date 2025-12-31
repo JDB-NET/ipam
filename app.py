@@ -36,14 +36,15 @@ def inject_env_vars():
     except Exception:
         pass
     
-    # Import has_permission from routes after routes are registered
-    from routes import has_permission
+    # Import has_permission and is_feature_enabled from routes after routes are registered
+    from routes import has_permission, is_feature_enabled
     
     return {
         'NAME': os.environ.get('NAME', 'JDB-NET'),
         'LOGO_PNG': os.environ.get('LOGO_PNG', 'https://assets.s3.jdbnet.co.uk/logo/128x128.png'),
         'VERSION': version,
-        'has_permission': has_permission
+        'has_permission': has_permission,
+        'is_feature_enabled': is_feature_enabled
     }
 
 register_routes(app, limiter)

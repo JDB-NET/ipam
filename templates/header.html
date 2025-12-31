@@ -29,7 +29,7 @@
             <span>Devices</span>
         </a>
         {% endif %}
-        {% if has_permission('view_racks') %}
+        {% if has_permission('view_racks') and is_feature_enabled('racks') %}
         <a href="/racks" class="text-gray-200 hover:text-gray-400 font-medium flex items-center gap-2">
             <i class="fas fa-th"></i>
             <span>Racks</span>
@@ -86,7 +86,7 @@
             <span>Devices</span>
         </a>
         {% endif %}
-        {% if has_permission('view_racks') %}
+        {% if has_permission('view_racks') and is_feature_enabled('racks') %}
         <a href="/racks" class="block px-6 py-2 text-gray-200 hover:text-gray-400 font-medium flex items-center gap-2">
             <i class="fas fa-th"></i>
             <span>Racks</span>

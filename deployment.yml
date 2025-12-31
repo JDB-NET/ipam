@@ -15,7 +15,7 @@ spec:
     spec:
       containers:
         - name: ipam
-          image: ghcr.io/jdb-net/ipam:latest
+          image: ghcr.io/jdb-net/ipam:staging
           imagePullPolicy: Always
           ports:
             - containerPort: 5000

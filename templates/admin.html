@@ -42,7 +42,7 @@
                     </div>
                     <i class="fas fa-chevron-right text-gray-400"></i>
                 </a>
-                {% if has_permission('view_tags') %}
+                {% if has_permission('view_tags') and is_feature_enabled('device_tags') %}
                 <a href="/tags" class="bg-gray-200 dark:bg-zinc-800 hover:bg-gray-300 dark:hover:bg-zinc-700 p-6 rounded-lg shadow-md flex items-center justify-between transition-colors">
                     <div class="flex items-center space-x-4">
                         <i class="fas fa-tags text-3xl text-gray-600 dark:text-gray-400"></i>
@@ -167,6 +167,40 @@
                 </div>
                 {% endif %}
             </div>
+
+            <!-- Feature Flags Section -->
+            {% if has_permission('manage_users') %}
+            <div class="bg-gray-200 dark:bg-zinc-800 p-6 rounded-lg shadow-md mt-8">
+                <h2 class="text-2xl font-bold mb-6">Feature Flags</h2>
+                <form action="/admin/feature_flags" method="POST">
+                    <div class="space-y-4">
+                        {% for flag in feature_flags %}
+                        <div class="flex items-center justify-between p-4 bg-gray-300 dark:bg-zinc-700 rounded-lg">
+                            <div class="flex-1">
+                                <label for="feature_{{ flag.key }}" class="text-lg font-semibold cursor-pointer">
+                                    {{ flag.key|replace('_', ' ')|title }}
+                                </label>
+                                {% if flag.description %}
+                                <p class="text-sm text-gray-600 dark:text-gray-400 mt-1">{{ flag.description }}</p>
+                                {% endif %}
+                            </div>
+                            <label class="relative inline-flex items-center cursor-pointer">
+                                <input type="checkbox" name="feature_{{ flag.key }}" id="feature_{{ flag.key }}" 
+                                       class="sr-only peer" {% if flag.enabled %}checked{% endif %}>
+                                <div class="w-11 h-6 bg-gray-600 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-gray-800 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-gray-500 dark:peer-checked:bg-zinc-600"></div>
+                            </label>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    <div class="flex justify-end mt-6">
+                        <button type="submit" class="bg-gray-300 hover:bg-gray-400 dark:bg-zinc-700 dark:hover:bg-zinc-600 hover:cursor-pointer px-6 py-2 rounded-lg font-medium">
+                            Save Changes
+                        </button>
+                    </div>
+                </form>
+            </div>
+            {% endif %}
+
         </div>
     </div>
     

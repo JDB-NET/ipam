@@ -75,6 +75,24 @@ def permission_required(permission_name):
         return decorated_function
     return decorator
 
+def is_feature_enabled(feature_key, conn=None):
+    """Check if a feature flag is enabled"""
+    close_conn = False
+    if conn is None:
+        from flask import current_app
+        conn = get_db_connection(current_app)
+        close_conn = True
+    
+    try:
+        cursor = conn.cursor()
+        cursor.execute('SELECT enabled FROM FeatureFlags WHERE feature_key = %s', (feature_key,))
+        result = cursor.fetchone()
+        # Default to True if feature flag doesn't exist (backward compatibility)
+        return result[0] if result else True
+    finally:
+        if close_conn:
+            conn.close()
+
 def get_user_from_api_key(api_key):
     """Get user from API key"""
     from flask import current_app
@@ -687,17 +705,22 @@ def prewarm_cache(app):
                                 cursor.execute('''SELECT DeviceIPAddress.id as device_ip_id, IPAddress.ip FROM DeviceIPAddress JOIN IPAddress ON DeviceIPAddress.ip_id = IPAddress.id WHERE DeviceIPAddress.device_id = %s''', (device_id,))
                                 device_ips = [{'device_ip_id': row[0], 'ip': row[1]} for row in cursor.fetchall()]
                                 
-                                cursor.execute('''
-                                    SELECT t.id, t.name, t.color
-                                    FROM DeviceTag dt
-                                    JOIN Tag t ON dt.tag_id = t.id
-                                    WHERE dt.device_id = %s
-                                    ORDER BY t.name
-                                ''', (device_id,))
-                                device_tags = [{'id': row[0], 'name': row[1], 'color': row[2]} for row in cursor.fetchall()]
-                                
-                                cursor.execute('SELECT id, name, color FROM Tag ORDER BY name')
-                                all_tags = [{'id': row[0], 'name': row[1], 'color': row[2]} for row in cursor.fetchall()]
+                                # Get tags for device (only if tags feature is enabled)
+                                tags_enabled = is_feature_enabled('device_tags', conn=conn)
+                                device_tags = []
+                                all_tags = []
+                                if tags_enabled:
+                                    cursor.execute('''
+                                        SELECT t.id, t.name, t.color
+                                        FROM DeviceTag dt
+                                        JOIN Tag t ON dt.tag_id = t.id
+                                        WHERE dt.device_id = %s
+                                        ORDER BY t.name
+                                    ''', (device_id,))
+                                    device_tags = [{'id': row[0], 'name': row[1], 'color': row[2]} for row in cursor.fetchall()]
+                                    
+                                    cursor.execute('SELECT id, name, color FROM Tag ORDER BY name')
+                                    all_tags = [{'id': row[0], 'name': row[1], 'color': row[2]} for row in cursor.fetchall()]
                                 
                                 available_ips_by_subnet = {}
                                 for subnet in subnets:
@@ -1026,10 +1049,13 @@ def register_routes(app, limiter=None):
         tag_filter = request.args.get('tag')
         
         with get_db_connection(current_app) as conn:
+            # Check if device tags feature is enabled
+            tags_enabled = is_feature_enabled('device_tags', conn=conn)
+            
             cursor = conn.cursor()
             
             # Base device query
-            if tag_filter:
+            if tag_filter and tags_enabled:
                 cursor.execute('''
                     SELECT DISTINCT d.id, d.name, dt.icon_class 
                     FROM Device d 
@@ -1051,21 +1077,23 @@ def register_routes(app, limiter=None):
             for row in cursor.fetchall():
                 device_ips.setdefault(row[0], []).append((row[1], row[2]))
             
-            # Get tags for each device
+            # Get tags for each device (only if tags feature is enabled)
             device_tags = {}
-            for device in devices:
-                cursor.execute('''
-                    SELECT t.id, t.name, t.color
-                    FROM DeviceTag dt
-                    JOIN Tag t ON dt.tag_id = t.id
-                    WHERE dt.device_id = %s
-                    ORDER BY t.name
-                ''', (device[0],))
-                device_tags[device[0]] = [{'id': row[0], 'name': row[1], 'color': row[2]} for row in cursor.fetchall()]
-            
-            # Get all available tags for filtering
-            cursor.execute('SELECT DISTINCT name FROM Tag ORDER BY name')
-            all_tag_names = [row[0] for row in cursor.fetchall()]
+            all_tag_names = []
+            if tags_enabled:
+                for device in devices:
+                    cursor.execute('''
+                        SELECT t.id, t.name, t.color
+                        FROM DeviceTag dt
+                        JOIN Tag t ON dt.tag_id = t.id
+                        WHERE dt.device_id = %s
+                        ORDER BY t.name
+                    ''', (device[0],))
+                    device_tags[device[0]] = [{'id': row[0], 'name': row[1], 'color': row[2]} for row in cursor.fetchall()]
+                
+                # Get all available tags for filtering
+                cursor.execute('SELECT DISTINCT name FROM Tag ORDER BY name')
+                all_tag_names = [row[0] for row in cursor.fetchall()]
             
             # Optimize: Get device sites in a single query instead of N+1
             sites_devices = {}
@@ -1153,19 +1181,23 @@ def register_routes(app, limiter=None):
             cursor.execute('''SELECT DeviceIPAddress.id as device_ip_id, IPAddress.ip FROM DeviceIPAddress JOIN IPAddress ON DeviceIPAddress.ip_id = IPAddress.id WHERE DeviceIPAddress.device_id = %s''', (device_id,))
             device_ips = [{'device_ip_id': row[0], 'ip': row[1]} for row in cursor.fetchall()]
             
-            # Get device tags
-            cursor.execute('''
-                SELECT t.id, t.name, t.color
-                FROM DeviceTag dt
-                JOIN Tag t ON dt.tag_id = t.id
-                WHERE dt.device_id = %s
-                ORDER BY t.name
-            ''', (device_id,))
-            device_tags = [{'id': row[0], 'name': row[1], 'color': row[2]} for row in cursor.fetchall()]
-            
-            # Get all available tags
-            cursor.execute('SELECT id, name, color FROM Tag ORDER BY name')
-            all_tags = [{'id': row[0], 'name': row[1], 'color': row[2]} for row in cursor.fetchall()]
+            # Get device tags (only if tags feature is enabled)
+            tags_enabled = is_feature_enabled('device_tags', conn=conn)
+            device_tags = []
+            all_tags = []
+            if tags_enabled:
+                cursor.execute('''
+                    SELECT t.id, t.name, t.color
+                    FROM DeviceTag dt
+                    JOIN Tag t ON dt.tag_id = t.id
+                    WHERE dt.device_id = %s
+                    ORDER BY t.name
+                ''', (device_id,))
+                device_tags = [{'id': row[0], 'name': row[1], 'color': row[2]} for row in cursor.fetchall()]
+                
+                # Get all available tags
+                cursor.execute('SELECT id, name, color FROM Tag ORDER BY name')
+                all_tags = [{'id': row[0], 'name': row[1], 'color': row[2]} for row in cursor.fetchall()]
             available_ips_by_subnet = {}
             for subnet in subnets:
                 cursor.execute('''
@@ -1338,6 +1370,9 @@ def register_routes(app, limiter=None):
         tag_id = request.form['tag_id']
         from flask import current_app
         with get_db_connection(current_app) as conn:
+            # Check if device tags feature is enabled
+            if not is_feature_enabled('device_tags', conn=conn):
+                abort(404)
             cursor = conn.cursor()
             cursor.execute('SELECT name FROM Device WHERE id = %s', (device_id,))
             device = cursor.fetchone()
@@ -1369,6 +1404,9 @@ def register_routes(app, limiter=None):
         tag_id = request.form['tag_id']
         from flask import current_app
         with get_db_connection(current_app) as conn:
+            # Check if device tags feature is enabled
+            if not is_feature_enabled('device_tags', conn=conn):
+                abort(404)
             cursor = conn.cursor()
             cursor.execute('SELECT name FROM Device WHERE id = %s', (device_id,))
             device = cursor.fetchone()
@@ -1448,11 +1486,14 @@ def register_routes(app, limiter=None):
                         subnet_dict['vlan_id'] = vlan_row[0]
                         subnet_dict['vlan_description'] = vlan_row[1]
                         subnet_dict['vlan_notes'] = vlan_row[2]
+                # Check if IP address notes feature is enabled
+                ip_notes_enabled = is_feature_enabled('ip_address_notes', conn=conn)
             return render_with_user('subnet.html', subnet=subnet_dict, 
                                   ip_addresses=cached_result['ip_addresses'], 
                                   utilization=cached_result['utilization'],
                                   custom_fields=custom_fields,
-                                  can_edit_subnet=has_permission('edit_subnet'))
+                                  can_edit_subnet=has_permission('edit_subnet'),
+                                  ip_notes_enabled=ip_notes_enabled)
         
         from flask import current_app
         with get_db_connection(current_app) as conn:
@@ -1525,11 +1566,16 @@ def register_routes(app, limiter=None):
             }
             # Cache for 3 hours
             cache.set(cache_key, result, ttl=10800)
+            
+            # Check if IP address notes feature is enabled
+            ip_notes_enabled = is_feature_enabled('ip_address_notes', conn=conn)
+            
             return render_with_user('subnet.html', subnet=subnet_dict, 
                                   ip_addresses=ip_addresses_with_device, 
                                   utilization=utilization_stats,
                                   custom_fields=custom_fields,
-                                  can_edit_subnet=has_permission('edit_subnet'))
+                                  can_edit_subnet=has_permission('edit_subnet'),
+                                  ip_notes_enabled=ip_notes_enabled)
 
     @app.route('/add_subnet', methods=['POST'])
     @permission_required('add_subnet')
@@ -1654,6 +1700,19 @@ def register_routes(app, limiter=None):
                     cached_result = None
         
         if cached_result is not None:
+            # Always fetch feature flags fresh (they might have changed)
+            from flask import current_app
+            with get_db_connection(current_app) as conn:
+                cursor = conn.cursor()
+                cursor.execute('SELECT feature_key, enabled, description FROM FeatureFlags ORDER BY feature_key')
+                feature_flags = []
+                for row in cursor.fetchall():
+                    feature_flags.append({
+                        'key': row[0],
+                        'enabled': bool(row[1]),
+                        'description': row[2]
+                    })
+            cached_result['feature_flags'] = feature_flags
             return render_with_user('admin.html', **cached_result)
         
         from flask import current_app
@@ -1701,15 +1760,54 @@ def register_routes(app, limiter=None):
                         'total': total_ips
                     }
                 })
+            
+            # Get feature flags (inside the connection context)
+            cursor.execute('SELECT feature_key, enabled, description FROM FeatureFlags ORDER BY feature_key')
+            feature_flags = []
+            for row in cursor.fetchall():
+                feature_flags.append({
+                    'key': row[0],
+                    'enabled': bool(row[1]),
+                    'description': row[2]
+                })
+        
         result_data = {
             'subnets': subnets,
             'can_add_subnet': has_permission('add_subnet'),
             'can_edit_subnet': has_permission('edit_subnet'),
-            'can_delete_subnet': has_permission('delete_subnet')
+            'can_delete_subnet': has_permission('delete_subnet'),
+            'feature_flags': feature_flags
         }
         # Cache for 3 hours
         cache.set(cache_key, result_data, ttl=10800)
+        
         return render_with_user('admin.html', **result_data)
+
+    @app.route('/admin/feature_flags', methods=['POST'])
+    @permission_required('manage_users')
+    def update_feature_flags():
+        """Update feature flags"""
+        user_name = get_current_user_name()
+        from flask import current_app
+        with get_db_connection(current_app) as conn:
+            cursor = conn.cursor()
+            # Get all feature flags
+            cursor.execute('SELECT feature_key FROM FeatureFlags')
+            all_features = [row[0] for row in cursor.fetchall()]
+            
+            # Update each feature flag based on form data
+            for feature_key in all_features:
+                enabled = request.form.get(f'feature_{feature_key}') == 'on'
+                cursor.execute('UPDATE FeatureFlags SET enabled = %s WHERE feature_key = %s', 
+                             (enabled, feature_key))
+                logging.info(f"User {user_name} {'enabled' if enabled else 'disabled'} feature '{feature_key}'")
+            
+            conn.commit()
+        
+        # Clear admin cache to refresh feature flags
+        cache.clear('admin')
+        
+        return redirect(url_for('admin'))
 
     @app.route('/api-docs')
     @permission_required('view_admin')
@@ -2047,6 +2145,9 @@ def register_routes(app, limiter=None):
     def tags():
         from flask import current_app
         with get_db_connection(current_app) as conn:
+            # Check if device tags feature is enabled
+            if not is_feature_enabled('device_tags', conn=conn):
+                abort(404)
             cursor = conn.cursor()
             error = None
             
@@ -3324,6 +3425,9 @@ def register_routes(app, limiter=None):
     def racks():
         from flask import current_app
         with get_db_connection(current_app) as conn:
+            # Check if racks feature is enabled
+            if not is_feature_enabled('racks', conn=conn):
+                abort(404)
             cursor = conn.cursor(dictionary=True)
             cursor.execute('SELECT * FROM Rack')
             racks = cursor.fetchall()
@@ -3343,6 +3447,10 @@ def register_routes(app, limiter=None):
     @permission_required('add_rack')
     def add_rack():
         from flask import current_app
+        with get_db_connection(current_app) as conn:
+            # Check if racks feature is enabled
+            if not is_feature_enabled('racks', conn=conn):
+                abort(404)
         if request.method == 'POST':
             name = request.form['name']
             site = request.form['site']
@@ -3364,6 +3472,9 @@ def register_routes(app, limiter=None):
         from flask import current_app, request
         side = request.args.get('side', 'front')
         with get_db_connection(current_app) as conn:
+            # Check if racks feature is enabled
+            if not is_feature_enabled('racks', conn=conn):
+                abort(404)
             cursor = conn.cursor(dictionary=True)
             cursor.execute('SELECT * FROM Rack WHERE id = %s', (rack_id,))
             rack = cursor.fetchone()
@@ -3404,6 +3515,9 @@ def register_routes(app, limiter=None):
         user_name = get_current_user_name()
         from flask import current_app
         with get_db_connection(current_app) as conn:
+            # Check if racks feature is enabled
+            if not is_feature_enabled('racks', conn=conn):
+                abort(404)
             cursor = conn.cursor(dictionary=True)
             cursor.execute('SELECT height_u FROM Rack WHERE id = %s', (rack_id,))
             rack = cursor.fetchone()
@@ -3464,6 +3578,9 @@ def register_routes(app, limiter=None):
         user_name = get_current_user_name()
         from flask import current_app
         with get_db_connection(current_app) as conn:
+            # Check if racks feature is enabled
+            if not is_feature_enabled('racks', conn=conn):
+                abort(404)
             cursor = conn.cursor(dictionary=True)
             cursor.execute('SELECT height_u FROM Rack WHERE id = %s', (rack_id,))
             rack = cursor.fetchone()
@@ -3521,6 +3638,9 @@ def register_routes(app, limiter=None):
         user_name = get_current_user_name()
         from flask import current_app
         with get_db_connection(current_app) as conn:
+            # Check if racks feature is enabled
+            if not is_feature_enabled('racks', conn=conn):
+                abort(404)
             cursor = conn.cursor(dictionary=True)
             cursor.execute('SELECT device_id, nonnet_device_name, position_u, side FROM RackDevice WHERE id = %s', (rack_device_id,))
             rd = cursor.fetchone()
@@ -3545,6 +3665,9 @@ def register_routes(app, limiter=None):
         user_name = get_current_user_name()
         from flask import current_app
         with get_db_connection(current_app) as conn:
+            # Check if racks feature is enabled
+            if not is_feature_enabled('racks', conn=conn):
+                abort(404)
             cursor = conn.cursor()
             cursor.execute('SELECT name FROM Rack WHERE id = %s', (rack_id,))
             rack_name = cursor.fetchone()
@@ -3559,6 +3682,9 @@ def register_routes(app, limiter=None):
     def export_rack_csv(rack_id):
         from flask import current_app
         with get_db_connection(current_app) as conn:
+            # Check if racks feature is enabled
+            if not is_feature_enabled('racks', conn=conn):
+                abort(404)
             cursor = conn.cursor(dictionary=True)
             cursor.execute('SELECT * FROM Rack WHERE id = %s', (rack_id,))
             rack = cursor.fetchone()
@@ -4274,6 +4400,9 @@ def register_routes(app, limiter=None):
         """Get all racks"""
         from flask import current_app
         with get_db_connection(current_app) as conn:
+            # Check if racks feature is enabled
+            if not is_feature_enabled('racks', conn=conn):
+                return jsonify({'error': 'Racks feature is disabled'}), 404
             cursor = conn.cursor(dictionary=True)
             cursor.execute('SELECT id, name, site, height_u FROM Rack ORDER BY site, name')
             racks = cursor.fetchall()
@@ -4300,6 +4429,9 @@ def register_routes(app, limiter=None):
         """Get a specific rack"""
         from flask import current_app
         with get_db_connection(current_app) as conn:
+            # Check if racks feature is enabled
+            if not is_feature_enabled('racks', conn=conn):
+                return jsonify({'error': 'Racks feature is disabled'}), 404
             cursor = conn.cursor(dictionary=True)
             cursor.execute('SELECT id, name, site, height_u FROM Rack WHERE id = %s', (rack_id,))
             rack = cursor.fetchone()
@@ -4337,6 +4469,9 @@ def register_routes(app, limiter=None):
             return jsonify({'error': 'height_u must be greater than zero'}), 400
         
         with get_db_connection(current_app) as conn:
+            # Check if racks feature is enabled
+            if not is_feature_enabled('racks', conn=conn):
+                return jsonify({'error': 'Racks feature is disabled'}), 404
             cursor = conn.cursor()
             cursor.execute('INSERT INTO Rack (name, site, height_u) VALUES (%s, %s, %s)', (name, site, height_u))
             rack_id = cursor.lastrowid
@@ -4351,6 +4486,9 @@ def register_routes(app, limiter=None):
         """Delete a rack"""
         from flask import current_app
         with get_db_connection(current_app) as conn:
+            # Check if racks feature is enabled
+            if not is_feature_enabled('racks', conn=conn):
+                return jsonify({'error': 'Racks feature is disabled'}), 404
             cursor = conn.cursor()
             cursor.execute('SELECT name FROM Rack WHERE id = %s', (rack_id,))
             rack = cursor.fetchone()
@@ -4394,6 +4532,9 @@ def register_routes(app, limiter=None):
                 return jsonify({'error': 'device_id must be an integer'}), 400
         
         with get_db_connection(current_app) as conn:
+            # Check if racks feature is enabled
+            if not is_feature_enabled('racks', conn=conn):
+                return jsonify({'error': 'Racks feature is disabled'}), 404
             cursor = conn.cursor(dictionary=True)
             cursor.execute('SELECT name, height_u FROM Rack WHERE id = %s', (rack_id,))
             rack = cursor.fetchone()
@@ -4454,6 +4595,9 @@ def register_routes(app, limiter=None):
         """Remove a device from a rack"""
         from flask import current_app
         with get_db_connection(current_app) as conn:
+            # Check if racks feature is enabled
+            if not is_feature_enabled('racks', conn=conn):
+                return jsonify({'error': 'Racks feature is disabled'}), 404
             cursor = conn.cursor(dictionary=True)
             cursor.execute('''
                 SELECT rd.device_id, rd.nonnet_device_name, rd.position_u, rd.side,
@@ -4748,6 +4892,9 @@ def register_routes(app, limiter=None):
         """Get all tags"""
         from flask import current_app
         with get_db_connection(current_app) as conn:
+            # Check if device tags feature is enabled
+            if not is_feature_enabled('device_tags', conn=conn):
+                return jsonify({'error': 'Device tags feature is disabled'}), 404
             cursor = conn.cursor(dictionary=True)
             cursor.execute('SELECT id, name, color, description, created_at FROM Tag ORDER BY name')
             tags = cursor.fetchall()
@@ -4761,6 +4908,11 @@ def register_routes(app, limiter=None):
     @api_permission_required('add_tag')
     def api_add_tag():
         """Create a new tag"""
+        from flask import current_app
+        with get_db_connection(current_app) as conn:
+            # Check if device tags feature is enabled
+            if not is_feature_enabled('device_tags', conn=conn):
+                return jsonify({'error': 'Device tags feature is disabled'}), 404
         data = request.get_json()
         if not data or 'name' not in data:
             return jsonify({'error': 'Tag name is required'}), 400
@@ -4794,6 +4946,9 @@ def register_routes(app, limiter=None):
         """Get a specific tag"""
         from flask import current_app
         with get_db_connection(current_app) as conn:
+            # Check if device tags feature is enabled
+            if not is_feature_enabled('device_tags', conn=conn):
+                return jsonify({'error': 'Device tags feature is disabled'}), 404
             cursor = conn.cursor(dictionary=True)
             cursor.execute('SELECT id, name, color, description, created_at FROM Tag WHERE id = %s', (tag_id,))
             tag = cursor.fetchone()
@@ -4815,6 +4970,11 @@ def register_routes(app, limiter=None):
     @api_permission_required('edit_tag')
     def api_update_tag(tag_id):
         """Update a tag"""
+        from flask import current_app
+        with get_db_connection(current_app) as conn:
+            # Check if device tags feature is enabled
+            if not is_feature_enabled('device_tags', conn=conn):
+                return jsonify({'error': 'Device tags feature is disabled'}), 404
         data = request.get_json()
         if not data:
             return jsonify({'error': 'Request body is required'}), 400
@@ -4868,6 +5028,9 @@ def register_routes(app, limiter=None):
         """Delete a tag"""
         from flask import current_app
         with get_db_connection(current_app) as conn:
+            # Check if device tags feature is enabled
+            if not is_feature_enabled('device_tags', conn=conn):
+                return jsonify({'error': 'Device tags feature is disabled'}), 404
             cursor = conn.cursor()
             cursor.execute('SELECT name FROM Tag WHERE id = %s', (tag_id,))
             tag = cursor.fetchone()
@@ -4889,6 +5052,9 @@ def register_routes(app, limiter=None):
         """Get tags for a specific device"""
         from flask import current_app
         with get_db_connection(current_app) as conn:
+            # Check if device tags feature is enabled
+            if not is_feature_enabled('device_tags', conn=conn):
+                return jsonify({'error': 'Device tags feature is disabled'}), 404
             cursor = conn.cursor(dictionary=True)
             cursor.execute('SELECT id, name FROM Device WHERE id = %s', (device_id,))
             if not cursor.fetchone():
@@ -4908,6 +5074,11 @@ def register_routes(app, limiter=None):
     @api_permission_required('assign_device_tag')
     def api_assign_device_tag(device_id):
         """Assign a tag to a device"""
+        from flask import current_app
+        with get_db_connection(current_app) as conn:
+            # Check if device tags feature is enabled
+            if not is_feature_enabled('device_tags', conn=conn):
+                return jsonify({'error': 'Device tags feature is disabled'}), 404
         data = request.get_json()
         if not data or 'tag_id' not in data:
             return jsonify({'error': 'tag_id is required'}), 400
@@ -4946,6 +5117,9 @@ def register_routes(app, limiter=None):
         """Remove a tag from a device"""
         from flask import current_app
         with get_db_connection(current_app) as conn:
+            # Check if device tags feature is enabled
+            if not is_feature_enabled('device_tags', conn=conn):
+                return jsonify({'error': 'Device tags feature is disabled'}), 404
             cursor = conn.cursor()
             cursor.execute('SELECT name FROM Device WHERE id = %s', (device_id,))
             device = cursor.fetchone()
@@ -5167,13 +5341,22 @@ def register_routes(app, limiter=None):
     def bulk_operations():
         from flask import current_app
         with get_db_connection(current_app) as conn:
+            # Check if bulk operations feature is enabled
+            if not is_feature_enabled('bulk_operations', conn=conn):
+                abort(404)
             cursor = conn.cursor()
             cursor.execute('SELECT id, name FROM Device ORDER BY name')
             devices = cursor.fetchall()
             cursor.execute('SELECT id, name, cidr, site FROM Subnet ORDER BY site, name')
             subnets = cursor.fetchall()
-            cursor.execute('SELECT id, name FROM Tag ORDER BY name')
-            tags = cursor.fetchall()
+            
+            # Get tags only if device tags feature is enabled
+            tags_enabled = is_feature_enabled('device_tags', conn=conn)
+            tags = []
+            if tags_enabled:
+                cursor.execute('SELECT id, name FROM Tag ORDER BY name')
+                tags = cursor.fetchall()
+            
             cursor.execute('SELECT id, name FROM DeviceType ORDER BY name')
             device_types = cursor.fetchall()
         return render_with_user('bulk_operations.html', 
@@ -5189,6 +5372,11 @@ def register_routes(app, limiter=None):
     @app.route('/bulk/assign_ips', methods=['POST'])
     @permission_required('add_device_ip')
     def bulk_assign_ips():
+        from flask import current_app
+        with get_db_connection(current_app) as conn:
+            # Check if bulk operations feature is enabled
+            if not is_feature_enabled('bulk_operations', conn=conn):
+                abort(404)
         device_id = request.form['device_id']
         ip_ids = request.form.getlist('ip_ids[]')
         user_name = get_current_user_name()
@@ -5268,6 +5456,11 @@ def register_routes(app, limiter=None):
     @app.route('/bulk/create_devices', methods=['POST'])
     @permission_required('add_device')
     def bulk_create_devices():
+        from flask import current_app
+        with get_db_connection(current_app) as conn:
+            # Check if bulk operations feature is enabled
+            if not is_feature_enabled('bulk_operations', conn=conn):
+                abort(404)
         device_names = request.form.get('device_names', '').strip().split('\n')
         device_type_id = int(request.form.get('device_type', 1))
         user_name = get_current_user_name()
@@ -5298,6 +5491,14 @@ def register_routes(app, limiter=None):
     @app.route('/bulk/assign_tags', methods=['POST'])
     @permission_required('assign_device_tag')
     def bulk_assign_tags():
+        from flask import current_app
+        with get_db_connection(current_app) as conn:
+            # Check if bulk operations feature is enabled
+            if not is_feature_enabled('bulk_operations', conn=conn):
+                abort(404)
+            # Check if device tags feature is enabled
+            if not is_feature_enabled('device_tags', conn=conn):
+                abort(404)
         device_ids = request.form.getlist('device_ids[]')
         tag_ids = request.form.getlist('tag_ids[]')
         user_name = get_current_user_name()
@@ -5344,6 +5545,11 @@ def register_routes(app, limiter=None):
     @app.route('/bulk/export_subnets', methods=['POST'])
     @permission_required('export_subnet_csv')
     def bulk_export_subnets():
+        from flask import current_app
+        with get_db_connection(current_app) as conn:
+            # Check if bulk operations feature is enabled
+            if not is_feature_enabled('bulk_operations', conn=conn):
+                abort(404)
         subnet_ids = request.form.getlist('subnet_ids[]')
         from flask import current_app
         output = StringIO()

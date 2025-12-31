@@ -57,16 +57,3 @@ jobs:
             ghcr.io/jdb-net/ipam:latest
           build-args: |
             VERSION=${{ env.VERSION }}
-
-  deploy:
-    name: Deploy to Kubernetes
-    needs: release-please
-    if: ${{ needs.release-please.outputs.release_created }}
-    runs-on: [ k3s-internal-htz-01 ]
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Apply manifests
-        run: |
-          sudo kubectl replace -f deployment.yml --grace-period=60 --force
